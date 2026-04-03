@@ -1,93 +1,145 @@
-# Telegram ↔ GitHub Copilot CLI Bridge
+# 🤖 Telegram ↔ GitHub Copilot CLI Bridge
 
-A Copilot CLI extension that bridges Telegram messages with your active Copilot CLI session. Chat with Copilot from your phone via Telegram.
+**Who needs OpenClaw when you have GitHub Copilot CLI Extensions?**
 
-## How It Works
+This project proves a point: GitHub Copilot CLI's extension system is powerful enough to turn your terminal AI assistant into a **remote-controllable agent accessible from your phone**. One file. No servers. No infrastructure. Just a Copilot CLI extension and a Telegram bot.
+
+## The Idea
+
+What if you could text your AI coding assistant from your phone while walking the dog, lying in bed, or sitting in a meeting? Not some watered-down chatbot — the **real** Copilot CLI with full access to your codebase, terminal, git, GitHub APIs, and every tool in the toolkit.
+
+That's exactly what this extension does.
+
+## What It Does
 
 ```
 ┌──────────────┐    long polling     ┌──────────────┐    session.send()    ┌──────────────┐
 │   Telegram   │ ◄─────────────────► │   Extension  │ ◄──────────────────► │  Copilot CLI │
-│   (your phone)│   getUpdates       │  (bridge)    │   assistant.message  │  (session)   │
+│  (your phone)│   getUpdates       │  (bridge)    │   assistant.message  │  (session)   │
 └──────────────┘   sendMessage       └──────────────┘                      └──────────────┘
 ```
 
-1. **Telegram → Copilot**: The extension long-polls Telegram's `getUpdates` API (with `timeout=25`). Telegram holds the connection open and returns **instantly** when a new message arrives. The message is injected into the Copilot CLI session as a user prompt.
+- **📱 → 💻**: Send a message on Telegram → it becomes a real user prompt in the Copilot CLI session
+- **💻 → 📱**: Copilot responds → the response is automatically forwarded to Telegram
+- **Full power**: The agent can read/write files, run commands, search code, create PRs, query GitHub — everything it can do locally, you can trigger from Telegram
 
-2. **Copilot → Telegram**: The extension listens for `assistant.message` events. When the agent responds, the response is forwarded to Telegram via `sendMessage`.
+### Real Examples From Our First Session
 
-3. **Typing indicator**: While the agent is processing, a typing indicator is shown in the Telegram chat.
+From Telegram, we asked Copilot to:
+- ✅ Check what we've been working on across repos (queried session history)
+- ✅ List all open PRs across GitHub (ran `gh search prs`)
+- ✅ Get detailed PR status with repo breakdowns
+
+All from a phone. All with full context.
+
+## The Build Story
+
+This extension was built **live in a single session** — iteratively, with real-time debugging. Here's the narrative:
+
+### 1. Research & Scaffold
+We started by researching the Telegram Bot API. Two options exist for receiving messages: **webhooks** (requires a public URL) and **long polling** (pure HTTP, works behind NAT). For a CLI tool, long polling was the obvious choice — Telegram holds the HTTP connection open and returns **instantly** when a message arrives. Near real-time, zero infrastructure.
+
+### 2. First Working Version
+Built the extension using the Copilot CLI SDK (`@github/copilot-sdk/extension`):
+- `joinSession()` to connect to the active CLI session
+- `session.send()` to inject Telegram messages as user prompts
+- `session.on("assistant.message")` to capture responses and forward them back
+- Telegram `getUpdates` with `timeout=10` for long polling
+
+### 3. The Conflict Problem
+When extensions reload (`/clear` or code changes), the CLI kills the old process and starts a new one. But Telegram only allows **one** `getUpdates` consumer per bot token. The old HTTP request was still hanging when the new instance started polling → `"Conflict: terminated by other getUpdates request"`.
+
+**The fixes evolved through several iterations:**
+- Added process signal handlers (SIGTERM/SIGINT) — but these don't fire on Windows
+- Added `stdin.close` listener — since extensions communicate over stdio JSON-RPC, stdin closing means the parent disconnected
+- Added conflict detection with backoff — if we get a conflict error, wait 3s and retry silently
+- Added a 2s startup delay — gives old instances time to die
+- Reduced poll timeout from 25s to 10s — old connections release faster
+
+### 4. The Duplicate Polling Bug
+`onSessionStart` fires on every session transition — not just the first one. Each fire spawned a new polling loop, creating multiple consumers fighting over `getUpdates`.
+
+**Fix:** Moved polling out of `onSessionStart` entirely. It now starts immediately when the script loads, right after `joinSession()`. One script execution = one poll loop. Clean.
+
+### 5. The Prompt Format Fix
+Messages from Telegram were arriving as raw text ("Hello?") with no indication they came from Telegram. The agent had no context about the message source.
+
+**Fix:** Prefixed all forwarded messages: `[Telegram from Hector]: Hello?`
+
+## Architecture Decisions
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| Update method | Long polling | No public URL needed, works behind NAT/firewalls, near-instant delivery |
+| Poll timeout | 10 seconds | Balance between responsiveness and fast instance transitions on reload |
+| Prompt injection | `setTimeout(() => session.send(), 0)` | Non-blocking — doesn't starve the poll loop |
+| Polling lifecycle | Start on script load | Avoids duplicate polling from repeated `onSessionStart` calls |
+| Message chunking | Auto-split at 4096 chars | Telegram's max message length |
+| Chat security | Optional `TELEGRAM_CHAT_ID` lock | Restrict bot to a single authorized chat |
 
 ## Setup
 
 ### 1. Create a Telegram Bot
+1. Message [@BotFather](https://t.me/BotFather) on Telegram
+2. Send `/newbot`, follow the prompts
+3. Copy the bot token
 
-1. Open Telegram and message [@BotFather](https://t.me/BotFather)
-2. Send `/newbot` and follow the prompts
-3. Copy the bot token (looks like `123456789:ABCdefGHI...`)
-
-### 2. Configure the Extension
-
+### 2. Configure
 ```bash
 cp .env.example .env
+# Edit .env and paste your bot token:
+# TELEGRAM_BOT_TOKEN=your-token-here
 ```
 
-Edit `.env` and paste your bot token:
+### 3. Start a Copilot CLI Session
+Open a terminal in this repo and start Copilot CLI. The extension loads automatically.
 
-```env
-TELEGRAM_BOT_TOKEN=your-bot-token-here
-TELEGRAM_CHAT_ID=
+### 4. Connect From Telegram
+Send `/start` to your bot. That's it — you're connected.
+
+### 5. Lock to Your Chat (Recommended)
+The `/start` response shows your chat ID. Add it to `.env`:
+```
+TELEGRAM_CHAT_ID=123456789
 ```
 
-### 3. Get Your Chat ID (Optional but Recommended)
+## File Structure
 
-Setting `TELEGRAM_CHAT_ID` locks the bridge to your specific chat for security:
-
-1. Start a Copilot CLI session in this repo
-2. Open Telegram and send `/start` to your bot
-3. The bot will reply with your chat ID
-4. Add it to `.env`: `TELEGRAM_CHAT_ID=123456789`
-5. Reload extensions (type `/clear` in Copilot CLI)
-
-### 4. Install as a User Extension (Optional)
-
-To use across all repos, copy the extension to your user extensions directory:
-
-```bash
-# Find your Copilot config directory (shown in `ghcs --help` or similar)
-cp -r .github/extensions/telegram-bridge ~/.copilot/extensions/
+```
+.github/extensions/telegram-bridge/
+  extension.mjs          ← The entire bridge (single file, ~420 lines)
+.env                     ← Your bot token (gitignored)
+.env.example             ← Template
 ```
 
-## Usage
+## The Point
 
-Once configured, the bridge starts automatically when a Copilot CLI session begins in this repo.
+This isn't just a Telegram bot. It's a proof of concept that **GitHub Copilot CLI extensions are a legitimate platform for building agent interfaces**. The extension SDK gives you:
 
-### From Telegram
+- **`session.send()`** — inject prompts programmatically
+- **`session.on("assistant.message")`** — capture agent responses in real-time
+- **Custom tools** — register new tools the agent can use (`telegram_send_message`)
+- **Lifecycle hooks** — react to session start, end, errors
+- **Full Node.js runtime** — `fetch`, `fs`, timers, whatever you need
 
-- Send any text message → becomes a Copilot CLI prompt
-- `/start` — shows welcome message and your chat ID
-- `/status` — shows bridge connection status
-- `/help` — shows available commands
+With these primitives, you can bridge Copilot CLI to **anything**: Slack, Discord, SMS, a web dashboard, a voice assistant, a hardware button. The extension system is the universal adapter.
 
-### From Copilot CLI
+**Who needs OpenClaw when you have this?**
 
-The agent has access to these tools:
+## Bot Commands
 
-- `telegram_send_message` — send an explicit message to Telegram
-- `telegram_get_status` — check bridge connection status
-
-All assistant responses are automatically forwarded to Telegram.
-
-## Architecture
-
-- **Long Polling** (not webhooks) — no public URL needed, works behind NAT/firewalls
-- **`timeout=25`** on `getUpdates` — near-instant message delivery, Telegram holds the HTTP connection open
-- **Offset tracking** — skips old messages on startup, processes only new ones
-- **Typing indicators** — refreshed every 4s while the agent is processing
-- **Message chunking** — responses over 4096 chars are split automatically
-- **Chat locking** — optional `TELEGRAM_CHAT_ID` restricts access to a single chat
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message + your chat ID |
+| `/status` | Bridge connection status |
+| `/help` | Available commands |
 
 ## Limitations
 
-- Text messages only (photos, documents, voice, etc. are not forwarded)
-- No Markdown formatting in Telegram (sent as plain text)
-- State is lost on `/clear` (extension reloads, but reconnects automatically)
+- Text messages only (photos, documents, voice not forwarded yet)
+- One bot token = one polling consumer (Telegram API constraint)
+- State resets on extension reload (chat ID re-links on first message)
+
+## License
+
+MIT
