@@ -2,7 +2,15 @@
 
 **Who needs OpenClaw when you have GitHub Copilot CLI Extensions?**
 
-This project proves a point: GitHub Copilot CLI's extension system is powerful enough to turn your terminal AI assistant into a **remote-controllable agent accessible from your phone**. One file. No servers. No infrastructure. Just a Copilot CLI extension and a Telegram bot.
+[OpenClaw](https://github.com/openclaw/openclaw) is a fantastic project — a full personal AI assistant framework with a gateway daemon, 20+ channel integrations (WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams, IRC, Matrix...), companion apps, voice wake words, a live canvas, multi-agent routing, onboarding wizards, and thousands of lines of infrastructure code.
+
+**This project does the same core thing in a single file.**
+
+One `.mjs` extension. ~420 lines. No gateway. No daemon. No infrastructure. Just a Copilot CLI extension that bridges Telegram to your active session using the Telegram Bot API's long polling. That's it.
+
+The point isn't that OpenClaw is bad — it's that GitHub Copilot CLI's extension system is **so powerful** that you can replicate the core value proposition (chat with an AI agent from your phone while it has full access to your codebase) without any of the framework overhead. The SDK gives you `session.send()` to inject prompts, `session.on("assistant.message")` to capture responses, and a full Node.js runtime. That's all you need.
+
+Want Slack instead of Telegram? Write another extension. Discord? Same pattern. The extension system **is** the framework.
 
 ## The Idea
 
@@ -114,7 +122,24 @@ TELEGRAM_CHAT_ID=123456789
 
 ## The Point
 
-This isn't just a Telegram bot. It's a proof of concept that **GitHub Copilot CLI extensions are a legitimate platform for building agent interfaces**. The extension SDK gives you:
+This isn't just a Telegram bot. It's a proof of concept that **GitHub Copilot CLI extensions are a legitimate platform for building agent interfaces**.
+
+### OpenClaw vs. This Extension
+
+| | OpenClaw | This Extension |
+|---|---------|----------------|
+| **Setup** | `npm install -g openclaw`, onboarding wizard, gateway daemon, systemd/launchd service | Drop one `.mjs` file, add bot token to `.env` |
+| **Infrastructure** | Gateway server, WebSocket control plane, session model, media pipeline | Nothing. The CLI *is* the infrastructure |
+| **Channels** | 20+ (WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams, IRC...) | 1 (Telegram). But adding another is just another extension file |
+| **Agent runtime** | Custom Pi agent runtime with RPC, tool streaming, block streaming | GitHub Copilot — already the best coding agent on the planet |
+| **Code access** | Configured per-workspace, sandboxed | Full access to everything the CLI session has |
+| **Tools** | Custom skill system, managed skills, workspace skills | Every tool in the Copilot CLI ecosystem + MCP servers + custom extension tools |
+| **Lines of code** | Thousands across gateway, channels, agent, CLI | ~420 lines, one file |
+| **Dependencies** | Node.js, pnpm/bun, systemd/launchd, model API keys | Node.js (already there for Copilot CLI) |
+
+The trade-off is obvious: OpenClaw is a **product** — polished, multi-channel, multi-user, always-on. This extension is a **hack** — single-channel, single-user, runs while your terminal is open. But for the use case of "I want to talk to my coding agent from my phone," the hack wins on simplicity by a mile.
+
+### The SDK primitives that make this possible
 
 - **`session.send()`** — inject prompts programmatically
 - **`session.on("assistant.message")`** — capture agent responses in real-time
@@ -122,9 +147,9 @@ This isn't just a Telegram bot. It's a proof of concept that **GitHub Copilot CL
 - **Lifecycle hooks** — react to session start, end, errors
 - **Full Node.js runtime** — `fetch`, `fs`, timers, whatever you need
 
-With these primitives, you can bridge Copilot CLI to **anything**: Slack, Discord, SMS, a web dashboard, a voice assistant, a hardware button. The extension system is the universal adapter.
+With these primitives, you can bridge Copilot CLI to **anything**: Slack, Discord, SMS, a web dashboard, a voice assistant, a hardware button. The extension system is the universal adapter. Each channel is just another `.mjs` file.
 
-**Who needs OpenClaw when you have this?**
+**Who needs a framework when you have primitives this good?**
 
 ## Bot Commands
 
