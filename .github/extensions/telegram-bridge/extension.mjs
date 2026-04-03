@@ -291,10 +291,9 @@ const session = await joinSession({
     },
 
     onSessionEnd: async () => {
-      running = false;
       stopTypingIndicator();
-      if (pollController) pollController.abort();
-      await session.log("📡 Telegram bridge stopped");
+      // Polling intentionally stays alive — the bridge persists
+      // until the CLI process itself exits.
     },
   },
 
