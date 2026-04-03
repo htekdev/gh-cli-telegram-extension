@@ -229,7 +229,16 @@ async function pollLoop(session) {
 
           startTypingIndicator(chatId);
 
-          session.send({ prompt: msg.text });
+          // Fire-and-forget with setTimeout to avoid blocking the poll loop.
+          // sendAndWait would block until the agent finishes, starving polling.
+          setTimeout(() => {
+            session.send({ prompt: msg.text }).catch((err) => {
+              session.log(
+                `⚠️ Failed to inject prompt: ${err.message}`,
+                { level: "warning" }
+              );
+            });
+          }, 0);
           continue;
         }
 
