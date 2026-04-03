@@ -121,6 +121,20 @@ function stopTypingIndicator() {
   }
 }
 
+// Ensure polling stops immediately when the process is killed (SIGTERM from CLI)
+function cleanupAndExit() {
+  running = false;
+  stopTypingIndicator();
+  if (pollController) pollController.abort();
+  process.exit(0);
+}
+process.on("SIGTERM", cleanupAndExit);
+process.on("SIGINT", cleanupAndExit);
+process.on("exit", () => {
+  running = false;
+  if (pollController) pollController.abort();
+});
+
 async function pollLoop(session) {
   running = true;
 
