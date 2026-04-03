@@ -138,6 +138,10 @@ process.on("exit", () => {
 async function pollLoop(session) {
   running = true;
 
+  // Wait briefly for any previous instance's getUpdates to finish dying.
+  // Telegram only allows one getUpdates consumer per bot token.
+  await sleep(2000);
+
   await skipOldUpdates();
 
   try {
@@ -162,7 +166,7 @@ async function pollLoop(session) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           offset: pollOffset,
-          timeout: 25,
+          timeout: 10,
           allowed_updates: ["message"],
         }),
         signal: pollController.signal,
@@ -171,6 +175,16 @@ async function pollLoop(session) {
       const data = await res.json();
 
       if (!data.ok) {
+        const isConflict = data.description?.includes("Conflict");
+        if (isConflict) {
+          // Another instance is still polling — back off and retry
+          await session.log(
+            "⏳ Waiting for previous polling instance to release...",
+            { ephemeral: true }
+          );
+          await sleep(3000);
+          continue;
+        }
         await session.log(
           `⚠️ Telegram API error: ${data.description}`,
           { level: "warning" }
