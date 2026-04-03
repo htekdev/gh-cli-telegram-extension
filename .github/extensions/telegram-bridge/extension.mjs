@@ -121,19 +121,20 @@ function stopTypingIndicator() {
   }
 }
 
-// Ensure polling stops immediately when the process is killed (SIGTERM from CLI)
-function cleanupAndExit() {
+// Ensure polling stops immediately when the process is killed.
+// On Windows, SIGTERM doesn't fire Node.js handlers — the CLI communicates
+// over stdio (JSON-RPC), so when the parent disconnects, stdin closes.
+function cleanup() {
   running = false;
   stopTypingIndicator();
   if (pollController) pollController.abort();
-  process.exit(0);
 }
-process.on("SIGTERM", cleanupAndExit);
-process.on("SIGINT", cleanupAndExit);
-process.on("exit", () => {
-  running = false;
-  if (pollController) pollController.abort();
-});
+
+process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+process.on("SIGINT", () => { cleanup(); process.exit(0); });
+process.on("disconnect", cleanup);
+process.stdin.on("close", () => { cleanup(); process.exit(0); });
+process.on("exit", cleanup);
 
 async function pollLoop(session) {
   running = true;
