@@ -151,6 +151,49 @@ With these primitives, you can bridge Copilot CLI to **anything**: Slack, Discor
 
 **Who needs a framework when you have primitives this good?**
 
+## The Future: OpenShell + Copilot CLI = Safe OpenClaw
+
+This project is step one. Step two is **[one PR away](https://github.com/NVIDIA/OpenShell-Community/pull/60)**.
+
+[OpenShell](https://github.com/NVIDIA/OpenShell) is NVIDIA's runtime environment for autonomous agents — the infrastructure where they live, work, and verify. It provides **sandboxed execution environments** with a policy engine, L7 proxy with credential injection, and network-level security. Think of it as Docker for AI agents, but with enterprise-grade isolation.
+
+**[PR #60](https://github.com/NVIDIA/OpenShell-Community/pull/60)** adds GitHub Copilot API endpoints to OpenShell's base sandbox policy. Once merged, Copilot CLI can run **inside an OpenShell sandbox** with:
+
+- ✅ L7 proxy credential injection (no API keys stored in the sandbox)
+- ✅ Network policy enforcement (only Copilot API endpoints are reachable)
+- ✅ Full sandboxed filesystem (agent can't escape)
+- ✅ Verified end-to-end: `/models`, `/chat/completions`, `/mcp/readonly` all working
+
+### What this means for the Telegram bridge
+
+When you combine **this extension** + **OpenShell sandbox** + **Copilot CLI**, you get:
+
+```
+┌──────────────┐         ┌──────────────────────────────────────────────────┐
+│   Telegram   │         │  OpenShell Sandbox                               │
+│  (your phone)│ ◄─────► │  ┌──────────────┐    ┌──────────────────────┐   │
+│              │         │  │  Telegram     │ ◄► │  Copilot CLI Session │   │
+│              │         │  │  Bridge Ext   │    │  (full agent)        │   │
+│              │         │  └──────────────┘    └──────────────────────┘   │
+│              │         │  • Network policy: only Copilot API + Telegram  │
+│              │         │  • L7 credential injection (no stored keys)     │
+│              │         │  • Sandboxed filesystem                         │
+└──────────────┘         └──────────────────────────────────────────────────┘
+```
+
+**A secure, sandboxed, remote-controllable AI coding agent accessible from your phone.** That's OpenClaw's entire value proposition — but built on GitHub Copilot (the best coding agent available) running inside NVIDIA's security infrastructure, controlled from Telegram with a single-file extension.
+
+No gateway daemon. No custom agent runtime. No thousand-line framework. Just proven infrastructure composed together:
+
+| Layer | Technology | Role |
+|-------|-----------|------|
+| **Agent** | GitHub Copilot CLI | The actual AI coding agent |
+| **Sandbox** | NVIDIA OpenShell | Secure, isolated execution |
+| **Interface** | This extension | Remote access from Telegram |
+| **Auth** | OpenShell L7 proxy | Credential injection, zero stored keys |
+
+**Safe OpenClaw.** And it's one PR merge away from reality.
+
 ## Bot Commands
 
 | Command | Description |
