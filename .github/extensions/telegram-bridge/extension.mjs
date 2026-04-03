@@ -290,6 +290,8 @@ async function pollLoop(session) {
   }
 }
 
+let pollStarted = false;
+
 // ---------------------------------------------------------------------------
 // Session setup
 // ---------------------------------------------------------------------------
@@ -308,13 +310,17 @@ const session = await joinSession({
         };
       }
 
-      // Start polling in the background (non-blocking)
-      pollLoop(session).catch(async (err) => {
-        await session.log(
-          `❌ Telegram polling crashed: ${err.message}`,
-          { level: "error" }
-        );
-      });
+      // Only start polling once per extension lifecycle
+      if (!pollStarted) {
+        pollStarted = true;
+        pollLoop(session).catch(async (err) => {
+          pollStarted = false;
+          await session.log(
+            `❌ Telegram polling crashed: ${err.message}`,
+            { level: "error" }
+          );
+        });
+      }
 
       const chatInfo = TELEGRAM_CHAT_ID
         ? ` (locked to chat ${TELEGRAM_CHAT_ID})`
