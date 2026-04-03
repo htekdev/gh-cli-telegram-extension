@@ -121,21 +121,6 @@ function stopTypingIndicator() {
   }
 }
 
-// Ensure polling stops immediately when the process is killed.
-// On Windows, SIGTERM doesn't fire Node.js handlers — the CLI communicates
-// over stdio (JSON-RPC), so when the parent disconnects, stdin closes.
-function cleanup() {
-  running = false;
-  stopTypingIndicator();
-  if (pollController) pollController.abort();
-}
-
-process.on("SIGTERM", () => { cleanup(); process.exit(0); });
-process.on("SIGINT", () => { cleanup(); process.exit(0); });
-process.on("disconnect", cleanup);
-process.stdin.on("close", () => { cleanup(); process.exit(0); });
-process.on("exit", cleanup);
-
 async function pollLoop(session) {
   running = true;
 
@@ -261,7 +246,7 @@ async function pollLoop(session) {
           // Fire-and-forget with setTimeout to avoid blocking the poll loop.
           // sendAndWait would block until the agent finishes, starving polling.
           setTimeout(() => {
-            session.send({ prompt: msg.text }).catch((err) => {
+            session.send({ prompt: `[Telegram from ${from}]: ${msg.text}` }).catch((err) => {
               session.log(
                 `⚠️ Failed to inject prompt: ${err.message}`,
                 { level: "warning" }
@@ -299,27 +284,11 @@ const session = await joinSession({
   hooks: {
     onSessionStart: async () => {
       if (!TELEGRAM_TOKEN) {
-        await session.log(
-          "⚠️ TELEGRAM_BOT_TOKEN not found in .env — Telegram bridge disabled",
-          { level: "warning" }
-        );
         return {
           additionalContext:
             "[telegram-bridge] Telegram bridge is NOT active. " +
             "The user needs to set TELEGRAM_BOT_TOKEN in .env and reload extensions.",
         };
-      }
-
-      // Only start polling once per extension lifecycle
-      if (!pollStarted) {
-        pollStarted = true;
-        pollLoop(session).catch(async (err) => {
-          pollStarted = false;
-          await session.log(
-            `❌ Telegram polling crashed: ${err.message}`,
-            { level: "error" }
-          );
-        });
       }
 
       const chatInfo = TELEGRAM_CHAT_ID
@@ -336,8 +305,6 @@ const session = await joinSession({
 
     onSessionEnd: async () => {
       stopTypingIndicator();
-      // Polling intentionally stays alive — the bridge persists
-      // until the CLI process itself exits.
     },
   },
 
@@ -411,6 +378,23 @@ const session = await joinSession({
     },
   ],
 });
+
+// ---------------------------------------------------------------------------
+// Start polling immediately on script load
+// ---------------------------------------------------------------------------
+if (TELEGRAM_TOKEN) {
+  pollLoop(session).catch(async (err) => {
+    await session.log(
+      `❌ Telegram polling crashed: ${err.message}`,
+      { level: "error" }
+    );
+  });
+} else {
+  await session.log(
+    "⚠️ TELEGRAM_BOT_TOKEN not found in .env — Telegram bridge disabled",
+    { level: "warning" }
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Forward assistant responses → Telegram
