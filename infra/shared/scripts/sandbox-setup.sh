@@ -65,16 +65,32 @@ DOTENVEOF
 chmod 600 ~/gh-cli-telegram-extension/.env
 echo "  .env created"
 
+# ── Update Copilot CLI ────────────────────────────────────────────────────────
+# Base image may have an older version. Install latest to user-writable location.
+echo ">>> Updating Copilot CLI..."
+npm install -g @github/copilot@latest --prefix ~/.npm-global 2>&1 | tail -3 || true
+export PATH="$HOME/.npm-global/bin:$PATH"
+echo "  Copilot: $(copilot --version 2>&1 | head -1)"
+
 # ── Pre-trust the repo directory ──────────────────────────────────────────────
 # Copilot prompts "do you trust this directory?" on first launch.
-# --yolo handles tool permissions but NOT directory trust. Pre-configure it.
+# --yolo handles tool permissions but NOT directory trust. Merge into existing config.
 echo ">>> Pre-trusting repo directory..."
 mkdir -p ~/.copilot
-cat > ~/.copilot/config.json << CFGEOF
-{
-  "trusted_folders": ["/sandbox/gh-cli-telegram-extension"]
-}
-CFGEOF
+if [ -f ~/.copilot/config.json ]; then
+  # Merge trusted_folders into existing config
+  node -e '
+    const fs = require("fs");
+    const cfg = JSON.parse(fs.readFileSync(process.env.HOME + "/.copilot/config.json", "utf8"));
+    cfg.trusted_folders = cfg.trusted_folders || [];
+    if (!cfg.trusted_folders.includes("/sandbox/gh-cli-telegram-extension")) {
+      cfg.trusted_folders.push("/sandbox/gh-cli-telegram-extension");
+    }
+    fs.writeFileSync(process.env.HOME + "/.copilot/config.json", JSON.stringify(cfg, null, 2));
+  '
+else
+  echo '{"trusted_folders":["/sandbox/gh-cli-telegram-extension"]}' > ~/.copilot/config.json
+fi
 echo "  Directory pre-trusted"
 
 # ── Generate MCP config ─────────────────────────────────────────────────────
