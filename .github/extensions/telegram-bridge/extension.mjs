@@ -243,14 +243,9 @@ async function pollLoop(session) {
 
           startTypingIndicator(chatId);
 
-          // Abort current agent turn so the new message steers (not queues).
-          // Then fire-and-forget send to avoid blocking the poll loop.
-          setTimeout(async () => {
-            try {
-              await session.abort();
-            } catch {
-              /* session may already be idle — that's fine */
-            }
+          // Fire-and-forget with setTimeout to avoid blocking the poll loop.
+          // sendAndWait would block until the agent finishes, starving polling.
+          setTimeout(() => {
             session.send({ prompt: `[Telegram from ${from}]: ${msg.text}` }).catch((err) => {
               session.log(
                 `⚠️ Failed to inject prompt: ${err.message}`,
