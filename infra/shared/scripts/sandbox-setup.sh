@@ -65,6 +65,18 @@ DOTENVEOF
 chmod 600 ~/gh-cli-telegram-extension/.env
 echo "  .env created"
 
+# ── Pre-trust the repo directory ──────────────────────────────────────────────
+# Copilot prompts "do you trust this directory?" on first launch.
+# --yolo handles tool permissions but NOT directory trust. Pre-configure it.
+echo ">>> Pre-trusting repo directory..."
+mkdir -p ~/.copilot
+cat > ~/.copilot/config.json << CFGEOF
+{
+  "trusted_folders": ["/sandbox/gh-cli-telegram-extension"]
+}
+CFGEOF
+echo "  Directory pre-trusted"
+
 # ── Generate MCP config ─────────────────────────────────────────────────────
 # All env vars are injected by OpenShell providers at runtime.
 echo ">>> Generating MCP config..."
