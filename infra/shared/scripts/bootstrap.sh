@@ -87,7 +87,6 @@ echo ">>> Writing credential files for providers..."
 for pair in \
   "copilot-token:$COPILOT_GITHUB_TOKEN" \
   "github-token:$GH_TOKEN" \
-  "telegram-token:$TELEGRAM_BOT_TOKEN" \
   "exa-key:$EXA_API_KEY" \
   "perplexity-key:$PERPLEXITY_API_KEY" \
   "youtube-key:$YOUTUBE_API_KEY" \

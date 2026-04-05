@@ -22,7 +22,6 @@ echo ">>> Creating OpenShell providers..."
 declare -A PROVIDERS=(
   ["copilot"]="COPILOT_GITHUB_TOKEN"
   ["github"]="GH_TOKEN"
-  ["telegram"]="TELEGRAM_BOT_TOKEN"
   ["exa"]="EXA_API_KEY"
   ["perplexity"]="PERPLEXITY_API_KEY"
   ["youtube"]="YOUTUBE_API_KEY"
@@ -32,14 +31,13 @@ declare -A PROVIDERS=(
 declare -A KEY_FILES=(
   ["copilot"]="copilot-token"
   ["github"]="github-token"
-  ["telegram"]="telegram-token"
   ["exa"]="exa-key"
   ["perplexity"]="perplexity-key"
   ["youtube"]="youtube-key"
   ["zernio"]="zernio-key"
 )
 
-for PROV_NAME in copilot github telegram exa perplexity youtube zernio; do
+for PROV_NAME in copilot github exa perplexity youtube zernio; do
   KEY_FILE="$HOME/${KEY_FILES[$PROV_NAME]}"
   CRED_NAME="${PROVIDERS[$PROV_NAME]}"
   KEY_VAL=$(cat "$KEY_FILE" 2>/dev/null || true)
@@ -60,7 +58,6 @@ openshell sandbox create \
   --policy "$HOME/sandbox-policy.yaml" \
   --provider copilot \
   --provider github \
-  --provider telegram \
   --provider exa \
   --provider perplexity \
   --provider youtube \
@@ -107,7 +104,7 @@ nohup ssh -tt -o StrictHostKeyChecking=no \
     -o ServerAliveCountMax=1000 \
     -o "ProxyCommand=$HOME/.local/bin/openshell ssh-proxy --gateway-name openshell --name $SANDBOX_NAME" \
     "sandbox@$SANDBOX_NAME" \
-    "cd ~/gh-cli-telegram-extension && unset TELEGRAM_BOT_TOKEN && copilot --yolo --autopilot --no-ask-user -i 'You are now connected via the Telegram bridge. Say hello to Telegram.'" \
+    "cd ~/gh-cli-telegram-extension && copilot --yolo --autopilot --no-ask-user -i 'You are now connected via the Telegram bridge. Say hello to Telegram.'" \
     > /home/ubuntu/copilot-session.log 2>&1 &
 COPILOT_SSH_PID=$!
 echo "$COPILOT_SSH_PID" > /home/ubuntu/.copilot-pid
