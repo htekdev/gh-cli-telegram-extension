@@ -107,7 +107,7 @@ nohup ssh -tt -o StrictHostKeyChecking=no \
     -o ServerAliveCountMax=1000 \
     -o "ProxyCommand=$HOME/.local/bin/openshell ssh-proxy --gateway-name openshell --name $SANDBOX_NAME" \
     "sandbox@$SANDBOX_NAME" \
-    "cd ~/gh-cli-telegram-extension && copilot --yolo --autopilot --no-ask-user -i 'You are now connected via the Telegram bridge. Say hello to Telegram.'" \
+    "cd ~/gh-cli-telegram-extension && unset TELEGRAM_BOT_TOKEN && copilot --yolo --autopilot --no-ask-user -i 'You are now connected via the Telegram bridge. Say hello to Telegram.'" \
     > /home/ubuntu/copilot-session.log 2>&1 &
 COPILOT_SSH_PID=$!
 echo "$COPILOT_SSH_PID" > /home/ubuntu/.copilot-pid
