@@ -376,6 +376,90 @@ const session = await joinSession({
         );
       },
     },
+    {
+      name: "telegram_send_photo",
+      description:
+        "Send a photo to the connected Telegram chat. " +
+        "Accepts a local file path or a URL. Use for sharing images, " +
+        "screenshots, generated graphics, or any visual content.",
+      parameters: {
+        type: "object",
+        properties: {
+          photo: {
+            type: "string",
+            description:
+              "Path to a local image file or a URL to an image. " +
+              "Supported formats: JPEG, PNG, GIF, BMP, WebP.",
+          },
+          caption: {
+            type: "string",
+            description: "Optional caption text for the photo (max 1024 chars).",
+          },
+          chat_id: {
+            type: "string",
+            description:
+              "Optional: specific chat ID to send to. Defaults to the active chat.",
+          },
+        },
+        required: ["photo"],
+      },
+      handler: async (args) => {
+        const targetChat = args.chat_id || activeChatId;
+        if (!targetChat) {
+          return {
+            textResultForLlm:
+              "No active Telegram chat. A user must message the bot first, or set TELEGRAM_CHAT_ID in .env.",
+            resultType: "failure",
+          };
+        }
+        if (!TELEGRAM_TOKEN) {
+          return {
+            textResultForLlm:
+              "Telegram bridge is not configured. Set TELEGRAM_BOT_TOKEN in .env.",
+            resultType: "failure",
+          };
+        }
+        try {
+          const photoSource = args.photo;
+          const isUrl =
+            photoSource.startsWith("http://") ||
+            photoSource.startsWith("https://");
+
+          if (isUrl) {
+            const body = { chat_id: targetChat, photo: photoSource };
+            if (args.caption) body.caption = args.caption;
+            await telegramApi("sendPhoto", body);
+          } else {
+            const { readFileSync } = await import("node:fs");
+            const { basename } = await import("node:path");
+            const fileData = readFileSync(photoSource);
+            const fileName = basename(photoSource);
+            const formData = new FormData();
+            formData.append("chat_id", targetChat);
+            formData.append(
+              "photo",
+              new Blob([fileData]),
+              fileName
+            );
+            if (args.caption) formData.append("caption", args.caption);
+
+            const res = await fetch(
+              `${API_BASE}/sendPhoto`,
+              { method: "POST", body: formData }
+            );
+            const data = await res.json();
+            if (!data.ok)
+              throw new Error(`Telegram API error: ${data.description}`);
+          }
+          return `Photo sent to Telegram chat ${targetChat}`;
+        } catch (err) {
+          return {
+            textResultForLlm: `Failed to send photo: ${err.message}`,
+            resultType: "failure",
+          };
+        }
+      },
+    },
   ],
 });
 
