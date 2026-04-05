@@ -1,6 +1,10 @@
 name: Deploy to AWS
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
@@ -11,32 +15,64 @@ on:
         options:
           - deploy
           - destroy
-      instance_type:
-        description: 'EC2 instance type'
+      environment:
+        description: 'Environment (auto-detected for push/PR triggers)'
         required: false
-        default: 't3.medium'
-        type: string
-
-env:
-  TF_VAR_gh_token: ${{ secrets.TF_VAR_GH_TOKEN }}
-  TF_VAR_copilot_github_token: ${{ secrets.TF_VAR_COPILOT_GITHUB_TOKEN }}
-  TF_VAR_telegram_bot_token: ${{ secrets.TF_VAR_TELEGRAM_BOT_TOKEN }}
-  TF_VAR_exa_api_key: ${{ secrets.TF_VAR_EXA_API_KEY }}
-  TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
-  TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
-  TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
-  TF_VAR_instance_type: ${{ inputs.instance_type }}
-  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-  AWS_DEFAULT_REGION: us-east-1
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - dev
 
 jobs:
   deploy:
-    if: inputs.action == 'deploy'
+    if: |
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      TF_VAR_gh_token: ${{ secrets.TF_VAR_GH_TOKEN }}
+      TF_VAR_copilot_github_token: ${{ secrets.TF_VAR_COPILOT_GITHUB_TOKEN }}
+      TF_VAR_exa_api_key: ${{ secrets.TF_VAR_EXA_API_KEY }}
+      TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
+      TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
+      TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "env=dev" >> $GITHUB_OUTPUT
+            echo "project_name=gh-copilot-cli-telegram-bridge-dev" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+            echo "project_name=gh-copilot-cli-telegram-bridge" >> $GITHUB_OUTPUT
+          else
+            ENV="${{ inputs.environment || 'prod' }}"
+            echo "env=$ENV" >> $GITHUB_OUTPUT
+            if [ "$ENV" = "dev" ]; then
+              echo "project_name=gh-copilot-cli-telegram-bridge-dev" >> $GITHUB_OUTPUT
+            else
+              echo "project_name=gh-copilot-cli-telegram-bridge" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Set Telegram token for environment
+        run: |
+          if [ "${{ steps.env.outputs.env }}" = "dev" ]; then
+            echo "TF_VAR_telegram_bot_token=${{ secrets.TF_VAR_TELEGRAM_BOT_TOKEN_DEV }}" >> $GITHUB_ENV
+          else
+            echo "TF_VAR_telegram_bot_token=${{ secrets.TF_VAR_TELEGRAM_BOT_TOKEN_PROD }}" >> $GITHUB_ENV
+          fi
+          echo "TF_VAR_environment=${{ steps.env.outputs.env }}" >> $GITHUB_ENV
+          echo "TF_VAR_project_name=${{ steps.env.outputs.project_name }}" >> $GITHUB_ENV
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -52,11 +88,11 @@ jobs:
         working-directory: infra/aws
         run: terraform init
 
-      - name: Destroy existing (if any)
+      - name: Destroy existing ${{ steps.env.outputs.env }}
         working-directory: infra/aws
         run: terraform destroy -auto-approve 2>&1 || echo "No existing infrastructure"
 
-      - name: Terraform Apply
+      - name: Terraform Apply (${{ steps.env.outputs.env }})
         working-directory: infra/aws
         run: |
           terraform apply -auto-approve
@@ -65,26 +101,22 @@ jobs:
 
       - name: Wait for bootstrap
         run: |
-          echo "⏳ Waiting for bootstrap to complete..."
+          echo "⏳ Waiting for bootstrap (${{ steps.env.outputs.env }})..."
           echo "   Instance: ${{ env.INSTANCE_ID }}"
           echo "   IP: ${{ env.PUBLIC_IP }}"
 
-          # Wait for SSH to become available
           for i in $(seq 1 30); do
             if ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
                 -o StrictHostKeyChecking=no \
                 -o ConnectTimeout=5 \
-                -o ServerAliveInterval=5 \
-                -o ServerAliveCountMax=2 \
                 ubuntu@${{ env.PUBLIC_IP }} "echo ready" 2>/dev/null; then
               echo "✅ SSH available"
               break
             fi
-            echo "   Attempt $i/30 - waiting for SSH..."
+            echo "   Attempt $i/30 — waiting for SSH..."
             sleep 10
           done
 
-          # Poll deploy status until success or failure
           for i in $(seq 1 60); do
             STATUS=$(ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
                 -o StrictHostKeyChecking=no \
@@ -97,7 +129,7 @@ jobs:
             echo "   Check $i/60: $STATUS"
 
             if echo "$STATUS" | grep -q '"status":"success"'; then
-              echo "✅ Bootstrap completed successfully!"
+              echo "✅ Bootstrap completed!"
               break
             fi
 
@@ -115,7 +147,6 @@ jobs:
 
       - name: Verify Copilot running
         run: |
-          echo "🔍 Verifying Copilot CLI is running in sandbox..."
           ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
               -o StrictHostKeyChecking=no \
               ubuntu@${{ env.PUBLIC_IP }} \
@@ -123,56 +154,72 @@ jobs:
 
       - name: Verify Telegram polling
         run: |
-          echo "🔍 Checking Telegram polling..."
           sleep 30
           TELEGRAM_COUNT=$(ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
               -o StrictHostKeyChecking=no \
               ubuntu@${{ env.PUBLIC_IP }} \
               'export PATH=$HOME/.local/bin:$PATH && openshell logs $(cat ~/.sandbox-name) --since 2m 2>/dev/null | grep "api.telegram" | wc -l' 2>/dev/null || echo "0")
 
-          echo "   Telegram requests in last 2 min: $TELEGRAM_COUNT"
-
-          if [ "$TELEGRAM_COUNT" -gt "0" ]; then
-            echo "✅ Telegram bridge is polling!"
-          else
-            echo "⚠️ No Telegram traffic yet — extension may still be loading"
-          fi
+          echo "Telegram requests in last 2 min: $TELEGRAM_COUNT"
+          [ "$TELEGRAM_COUNT" -gt "0" ] && echo "✅ Telegram bridge polling!" || echo "⚠️ Extension may still be loading"
 
       - name: Deploy summary
         run: |
           echo ""
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  ✅ DEPLOY COMPLETE                                        ║"
-          echo "║                                                            ║"
-          echo "║  Instance: ${{ env.INSTANCE_ID }}                          ║"
-          echo "║  IP: ${{ env.PUBLIC_IP }}                                  ║"
-          echo "║                                                            ║"
-          echo "║  SSH:                                                      ║"
-          echo "║    ssh -i key.pem ubuntu@${{ env.PUBLIC_IP }}              ║"
-          echo "║                                                            ║"
-          echo "║  Sandbox:                                                  ║"
-          echo "║    openshell sandbox connect \$(cat ~/.sandbox-name)       ║"
-          echo "║                                                            ║"
-          echo "║  Copilot CLI is running with --yolo --autopilot            ║"
-          echo "║  Telegram bridge is active                                 ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo "══════════════════════════════════════════════════════"
+          echo "  ✅ ${{ steps.env.outputs.env }} DEPLOY COMPLETE"
+          echo "  Instance: ${{ env.INSTANCE_ID }}"
+          echo "  IP: ${{ env.PUBLIC_IP }}"
+          echo "  SSH: ssh -i key.pem ubuntu@${{ env.PUBLIC_IP }}"
+          echo "══════════════════════════════════════════════════════"
 
       - name: Save Terraform state
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-state
+          name: terraform-state-${{ steps.env.outputs.env }}
           path: |
             infra/aws/terraform.tfstate
             infra/aws/terraform.tfstate.backup
           retention-days: 30
 
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem
+
   destroy:
-    if: inputs.action == 'destroy'
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'destroy'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TF_VAR_gh_token: ${{ secrets.TF_VAR_GH_TOKEN }}
+      TF_VAR_copilot_github_token: ${{ secrets.TF_VAR_COPILOT_GITHUB_TOKEN }}
+      TF_VAR_exa_api_key: ${{ secrets.TF_VAR_EXA_API_KEY }}
+      TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
+      TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
+      TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
     steps:
       - uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          ENV="${{ inputs.environment || 'prod' }}"
+          echo "env=$ENV" >> $GITHUB_OUTPUT
+
+      - name: Set Terraform variables
+        run: |
+          if [ "${{ steps.env.outputs.env }}" = "dev" ]; then
+            echo "TF_VAR_telegram_bot_token=${{ secrets.TF_VAR_TELEGRAM_BOT_TOKEN_DEV }}" >> $GITHUB_ENV
+            echo "TF_VAR_project_name=gh-copilot-cli-telegram-bridge-dev" >> $GITHUB_ENV
+          else
+            echo "TF_VAR_telegram_bot_token=${{ secrets.TF_VAR_TELEGRAM_BOT_TOKEN_PROD }}" >> $GITHUB_ENV
+            echo "TF_VAR_project_name=gh-copilot-cli-telegram-bridge" >> $GITHUB_ENV
+          fi
+          echo "TF_VAR_environment=${{ steps.env.outputs.env }}" >> $GITHUB_ENV
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -187,7 +234,7 @@ jobs:
       - name: Download Terraform state
         uses: actions/download-artifact@v4
         with:
-          name: terraform-state
+          name: terraform-state-${{ steps.env.outputs.env }}
           path: infra/aws/
         continue-on-error: true
 
@@ -195,11 +242,11 @@ jobs:
         working-directory: infra/aws
         run: terraform init
 
-      - name: Terraform Destroy
+      - name: Terraform Destroy (${{ steps.env.outputs.env }})
         working-directory: infra/aws
         run: |
           terraform destroy -auto-approve
-          echo "✅ Infrastructure destroyed"
+          echo "✅ ${{ steps.env.outputs.env }} infrastructure destroyed"
 
       - name: Cleanup SSH key
         if: always()
