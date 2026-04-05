@@ -8,6 +8,22 @@
 
 echo "=== Sandbox internal setup started ==="
 
+# ── Load raw secrets ─────────────────────────────────────────────────────────
+# TELEGRAM_BOT_TOKEN must come from raw secrets file, not provider env var,
+# because provider env vars in SSH sessions are resolver strings, not raw values.
+SECRETS_PATH=""
+for p in /sandbox/secrets/raw-secrets.env /sandbox/secrets; do
+  if [ -f "$p" ]; then SECRETS_PATH="$p"; break; fi
+done
+if [ -n "$SECRETS_PATH" ]; then
+  set -a
+  source "$SECRETS_PATH"
+  set +a
+  echo "  Raw secrets loaded from $SECRETS_PATH"
+else
+  echo "  WARNING: raw secrets not found — TELEGRAM_BOT_TOKEN may be a resolver string"
+fi
+
 # ── Configure git ────────────────────────────────────────────────────────────
 echo ">>> Configuring git..."
 git config --global http.sslCAInfo /etc/openshell-tls/openshell-ca.pem

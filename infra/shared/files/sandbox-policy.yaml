@@ -96,6 +96,8 @@ network_policies:
         port: 443
     binaries:
       - path: /usr/bin/node
+      - path: /usr/bin/curl
+      - path: /usr/lib/node_modules/@github/copilot/**
 
   # ── Exa AI API (L7 credential injection) ──
   exa_api:

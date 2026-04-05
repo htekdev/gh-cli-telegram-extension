@@ -79,6 +79,12 @@ fi
 echo ">>> Sandbox: $SANDBOX_NAME"
 echo "$SANDBOX_NAME" > "$HOME/.sandbox-name"
 
+# ── Upload raw secrets into sandbox ──────────────────────────────────────────
+# TELEGRAM_BOT_TOKEN needs raw value for .env (provider gives resolver string)
+echo ">>> Uploading raw secrets into sandbox..."
+openshell sandbox upload "$SANDBOX_NAME" "$HOME/raw-secrets.env" /sandbox/secrets 2>&1
+echo "  Secrets uploaded"
+
 # ── Run internal setup via SSH proxy ─────────────────────────────────────────
 # Pipe the setup script via stdin to avoid openshell upload path issues
 echo ">>> Running setup inside sandbox..."
