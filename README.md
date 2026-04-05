@@ -4,19 +4,64 @@
 
 [OpenClaw](https://github.com/openclaw/openclaw) is a fantastic project — a full personal AI assistant framework with a gateway daemon, 20+ channel integrations (WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams, IRC, Matrix...), companion apps, voice wake words, a live canvas, multi-agent routing, onboarding wizards, and thousands of lines of infrastructure code.
 
-**This project does the same core thing in a single file.**
+**This project does the same core thing in a single file — and deploys it securely to the cloud with one command.**
 
-One `.mjs` extension. ~420 lines. No gateway. No daemon. No infrastructure. Just a Copilot CLI extension that bridges Telegram to your active session using the Telegram Bot API's long polling. That's it.
+One `.mjs` extension. ~420 lines. No gateway. No daemon. Deployed inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox with policy-enforced networking, L7 credential injection, and full IaC automation via Terraform. `terraform apply` → 10 minutes → a secure, sandboxed Copilot CLI agent on Telegram.
 
-The point isn't that OpenClaw is bad — it's that GitHub Copilot CLI's extension system is **so powerful** that you can replicate the core value proposition (chat with an AI agent from your phone while it has full access to your codebase) without any of the framework overhead. The SDK gives you `session.send()` to inject prompts, `session.on("assistant.message")` to capture responses, and a full Node.js runtime. That's all you need.
+## What We Built
 
-Want Slack instead of Telegram? Write another extension. Discord? Same pattern. The extension system **is** the framework.
+### Phase 1: The Extension
 
-## The Idea
+A Copilot CLI extension that bridges Telegram to your active session using long polling. The SDK gives you `session.send()` to inject prompts, `session.on("assistant.message")` to capture responses, and a full Node.js runtime. That's all you need.
 
-What if you could text your AI coding assistant from your phone while walking the dog, lying in bed, or sitting in a meeting? Not some watered-down chatbot — the **real** Copilot CLI with full access to your codebase, terminal, git, GitHub APIs, and every tool in the toolkit.
+### Phase 2: Safe OpenClaw (Current)
 
-That's exactly what this extension does.
+Infrastructure as Code that deploys Copilot CLI inside an OpenShell sandbox on AWS, connected to Telegram — a secure, automated alternative to OpenClaw.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  AWS EC2 (Ubuntu 24.04, t3.medium)                           │
+│  Docker + OpenShell gateway                                   │
+│                                                               │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │  OpenShell Sandbox (policy-enforced)                   │   │
+│  │                                                        │   │
+│  │  Copilot CLI --yolo --autopilot --experimental         │   │
+│  │  Telegram Bridge Extension (this repo)                 │   │
+│  │                                                        │   │
+│  │  Providers (credentials injected at runtime):          │   │
+│  │    copilot  → GitHub Copilot API                       │   │
+│  │    github   → GitHub API + git                         │   │
+│  │    exa      → Exa AI search                            │   │
+│  │    perplexity → Perplexity AI research                 │   │
+│  │    youtube  → YouTube Data API                         │   │
+│  │    zernio   → Zernio social media                      │   │
+│  │                                                        │   │
+│  │  MCP Servers: exa, perplexity, youtube, mslearn        │   │
+│  │                                                        │   │
+│  │  Network Policy (default deny):                        │   │
+│  │  ✅ GitHub API (L7 credential injection)               │   │
+│  │  ✅ Copilot API (TCP passthrough)                      │   │
+│  │  ✅ Telegram Bot API                                   │   │
+│  │  ✅ Exa, Perplexity, YouTube, Zernio (L7)             │   │
+│  │  ✅ npm registry                                       │   │
+│  │  ❌ Everything else (blocked)                          │   │
+│  └────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Zero manual steps.** `terraform apply` handles everything:
+1. Provisions EC2 instance (Ubuntu 24.04)
+2. Installs Docker, Node.js 22, pnpm, gh CLI, OpenShell
+3. Creates 6 OpenShell providers for credential injection
+4. Creates sandbox with network policy
+5. Clones this repo inside sandbox
+6. Generates MCP config from injected env vars
+7. Pre-trusts the repo directory + enables experimental mode
+8. Starts Copilot CLI with `--yolo --autopilot --no-ask-user --experimental`
+9. Telegram bridge extension auto-loads and begins polling
+
+**~10 minutes from `terraform apply` to a live agent on Telegram.**
 
 ## What It Does
 
@@ -31,216 +76,170 @@ That's exactly what this extension does.
 - **💻 → 📱**: Copilot responds → the response is automatically forwarded to Telegram
 - **Full power**: The agent can read/write files, run commands, search code, create PRs, query GitHub — everything it can do locally, you can trigger from Telegram
 
-### Real Examples From Our First Session
+## Quick Start
 
-From Telegram, we asked Copilot to:
-- ✅ Check what we've been working on across repos (queried session history)
-- ✅ List all open PRs across GitHub (ran `gh search prs`)
-- ✅ Get detailed PR status with repo breakdowns
+### Local Mode (extension only)
 
-All from a phone. All with full context.
+1. Message [@BotFather](https://t.me/BotFather) on Telegram, create a bot, copy the token
+2. `cp .env.example .env` and paste your bot token
+3. Start `copilot --experimental` in this repo — extension loads automatically
+4. Send `/start` to your bot on Telegram
 
-## The Build Story
+### Cloud Mode (OpenShell sandbox on AWS)
 
-This extension was built **live in a single session** — iteratively, with real-time debugging. Here's the narrative:
-
-### 1. Research & Scaffold
-We started by researching the Telegram Bot API. Two options exist for receiving messages: **webhooks** (requires a public URL) and **long polling** (pure HTTP, works behind NAT). For a CLI tool, long polling was the obvious choice — Telegram holds the HTTP connection open and returns **instantly** when a message arrives. Near real-time, zero infrastructure.
-
-### 2. First Working Version
-Built the extension using the Copilot CLI SDK (`@github/copilot-sdk/extension`):
-- `joinSession()` to connect to the active CLI session
-- `session.send()` to inject Telegram messages as user prompts
-- `session.on("assistant.message")` to capture responses and forward them back
-- Telegram `getUpdates` with `timeout=10` for long polling
-
-### 3. The Conflict Problem
-When extensions reload (`/clear` or code changes), the CLI kills the old process and starts a new one. But Telegram only allows **one** `getUpdates` consumer per bot token. The old HTTP request was still hanging when the new instance started polling → `"Conflict: terminated by other getUpdates request"`.
-
-**The fixes evolved through several iterations:**
-- Added process signal handlers (SIGTERM/SIGINT) — but these don't fire on Windows
-- Added `stdin.close` listener — since extensions communicate over stdio JSON-RPC, stdin closing means the parent disconnected
-- Added conflict detection with backoff — if we get a conflict error, wait 3s and retry silently
-- Added a 2s startup delay — gives old instances time to die
-- Reduced poll timeout from 25s to 10s — old connections release faster
-
-### 4. The Duplicate Polling Bug
-`onSessionStart` fires on every session transition — not just the first one. Each fire spawned a new polling loop, creating multiple consumers fighting over `getUpdates`.
-
-**Fix:** Moved polling out of `onSessionStart` entirely. It now starts immediately when the script loads, right after `joinSession()`. One script execution = one poll loop. Clean.
-
-### 5. The Prompt Format Fix
-Messages from Telegram were arriving as raw text ("Hello?") with no indication they came from Telegram. The agent had no context about the message source.
-
-**Fix:** Prefixed all forwarded messages: `[Telegram from Hector]: Hello?`
-
-## Architecture Decisions
-
-| Decision | Choice | Why |
-|----------|--------|-----|
-| Update method | Long polling | No public URL needed, works behind NAT/firewalls, near-instant delivery |
-| Poll timeout | 10 seconds | Balance between responsiveness and fast instance transitions on reload |
-| Prompt injection | `setTimeout(() => session.send(), 0)` | Non-blocking — doesn't starve the poll loop |
-| Polling lifecycle | Start on script load | Avoids duplicate polling from repeated `onSessionStart` calls |
-| Message chunking | Auto-split at 4096 chars | Telegram's max message length |
-| Chat security | Optional `TELEGRAM_CHAT_ID` lock | Restrict bot to a single authorized chat |
-
-## Setup
-
-### 1. Create a Telegram Bot
-1. Message [@BotFather](https://t.me/BotFather) on Telegram
-2. Send `/newbot`, follow the prompts
-3. Copy the bot token
-
-### 2. Configure
-```bash
-cp .env.example .env
-# Edit .env and paste your bot token:
-# TELEGRAM_BOT_TOKEN=your-token-here
-```
-
-### 3. Start a Copilot CLI Session
-Open a terminal in this repo and start Copilot CLI. The extension loads automatically.
-
-### 4. Connect From Telegram
-Send `/start` to your bot. That's it — you're connected.
-
-### 5. Lock to Your Chat (Recommended)
-The `/start` response shows your chat ID. Add it to `.env`:
-```
-TELEGRAM_CHAT_ID=123456789
-```
-
-## File Structure
-
-```
-.github/extensions/telegram-bridge/
-  extension.mjs          ← The entire bridge (single file, ~420 lines)
-infra/
-  aws/                   ← AWS Terraform root module
-    main.tf              ← EC2 + security group + Ubuntu 24.04 AMI
-    variables.tf         ← Input variables (API keys, instance config)
-    outputs.tf           ← IP, SSH command, deploy status
-    terraform.tfvars.example  ← Template (committed)
-  shared/
-    scripts/
-      bootstrap.sh       ← VM user-data: Docker, Node.js 22, pnpm, gh CLI
-.env                     ← Your bot token (gitignored)
-.env.example             ← Template
-```
-
-## AWS VM Deployment
-
-Deploy a ready-to-use Ubuntu 24.04 VM on AWS with all prerequisites pre-installed (Docker, Node.js 22, pnpm, GitHub CLI). API keys are injected via Terraform and available as environment variables on the VM.
-
-### Prerequisites
+#### Prerequisites
 
 - [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
 - AWS CLI configured with EC2 permissions
-- Key pair named `gh-copilot-openclaw-key` (create one with `aws ec2 create-key-pair`)
+- Key pair named `gh-copilot-openclaw-key`
 
-### Deploy
+#### Deploy
 
 ```bash
 cd infra/aws
 cp terraform.tfvars.example terraform.tfvars
-# Fill in your API keys
+# Fill in your API keys (see terraform.tfvars.example for list)
 terraform init && terraform apply
 ```
 
-In ~5 minutes your VM is ready with Docker, Node.js 22, pnpm, and gh CLI installed, plus all API keys in `/home/ubuntu/.env`.
+In ~10 minutes your agent is live on Telegram. No SSH needed. No manual steps.
 
-### SSH In
+#### SSH In (for debugging)
 
 ```bash
 ssh -i gh-copilot-openclaw-key.pem ubuntu@$(cd infra/aws && terraform output -raw public_ip)
+
+# Connect to sandbox
+export PATH=$HOME/.local/bin:$PATH
+openshell sandbox connect $(cat ~/.sandbox-name)
+
+# Check Copilot log
+tail -f ~/copilot-session.log
+
+# Check extension polling
+openshell logs $(cat ~/.sandbox-name) --since 5m | grep telegram
 ```
 
-### Cost
+#### Cost
 
 | Running 24/7 | Stopped |
 |-------------|---------|
 | ~$30/mo (t3.medium) | ~$1.60/mo (EBS only) |
 
-### Destroy
+#### Destroy
 
 ```bash
 cd infra/aws && terraform destroy
 ```
 
-## The Point
+## OpenClaw vs. This Project
 
-This isn't just a Telegram bot. It's a proof of concept that **GitHub Copilot CLI extensions are a legitimate platform for building agent interfaces**.
+| | OpenClaw | This Project |
+|---|---------|-------------|
+| **Setup** | `npm install -g openclaw`, onboarding wizard, gateway daemon, systemd/launchd | `terraform apply` — one command, zero manual steps |
+| **Infrastructure** | Gateway server, WebSocket control plane, session model, media pipeline | OpenShell sandbox + Copilot CLI + one extension file |
+| **Security** | Manual configuration, API keys stored on disk | OpenShell policy-enforced networking, L7 credential injection, default-deny |
+| **Agent** | Custom Pi agent runtime | GitHub Copilot — the best coding agent available |
+| **Channels** | 20+ (WhatsApp, Telegram, Slack, Discord, Signal, etc.) | 1 (Telegram). Adding more = adding extension files |
+| **Tools** | Custom skill system | Full Copilot CLI ecosystem + MCP servers |
+| **Code** | Thousands of lines across gateway, channels, agent, CLI | ~420 lines (extension) + ~300 lines (IaC scripts) |
+| **Cloud deploy** | Manual VM setup, systemd services, interactive auth | `terraform apply` — fully automated |
 
-### OpenClaw vs. This Extension
-
-| | OpenClaw | This Extension |
-|---|---------|----------------|
-| **Setup** | `npm install -g openclaw`, onboarding wizard, gateway daemon, systemd/launchd service | Drop one `.mjs` file, add bot token to `.env` |
-| **Infrastructure** | Gateway server, WebSocket control plane, session model, media pipeline | Nothing. The CLI *is* the infrastructure |
-| **Channels** | 20+ (WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams, IRC...) | 1 (Telegram). But adding another is just another extension file |
-| **Agent runtime** | Custom Pi agent runtime with RPC, tool streaming, block streaming | GitHub Copilot — already the best coding agent on the planet |
-| **Code access** | Configured per-workspace, sandboxed | Full access to everything the CLI session has |
-| **Tools** | Custom skill system, managed skills, workspace skills | Every tool in the Copilot CLI ecosystem + MCP servers + custom extension tools |
-| **Lines of code** | Thousands across gateway, channels, agent, CLI | ~420 lines, one file |
-| **Dependencies** | Node.js, pnpm/bun, systemd/launchd, model API keys | Node.js (already there for Copilot CLI) |
-
-The trade-off is obvious: OpenClaw is a **product** — polished, multi-channel, multi-user, always-on. This extension is a **hack** — single-channel, single-user, runs while your terminal is open. But for the use case of "I want to talk to my coding agent from my phone," the hack wins on simplicity by a mile.
-
-### The SDK primitives that make this possible
-
-- **`session.send()`** — inject prompts programmatically
-- **`session.on("assistant.message")`** — capture agent responses in real-time
-- **Custom tools** — register new tools the agent can use (`telegram_send_message`)
-- **Lifecycle hooks** — react to session start, end, errors
-- **Full Node.js runtime** — `fetch`, `fs`, timers, whatever you need
-
-With these primitives, you can bridge Copilot CLI to **anything**: Slack, Discord, SMS, a web dashboard, a voice assistant, a hardware button. The extension system is the universal adapter. Each channel is just another `.mjs` file.
-
-**Who needs a framework when you have primitives this good?**
-
-## The Future: OpenShell + Copilot CLI = Safe OpenClaw
-
-This project is step one. Step two is **[one PR away](https://github.com/NVIDIA/OpenShell-Community/pull/60)**.
-
-[OpenShell](https://github.com/NVIDIA/OpenShell) is NVIDIA's runtime environment for autonomous agents — the infrastructure where they live, work, and verify. It provides **sandboxed execution environments** with a policy engine, L7 proxy with credential injection, and network-level security. Think of it as Docker for AI agents, but with enterprise-grade isolation.
-
-**[PR #60](https://github.com/NVIDIA/OpenShell-Community/pull/60)** adds GitHub Copilot API endpoints to OpenShell's base sandbox policy. Once merged, Copilot CLI can run **inside an OpenShell sandbox** with:
-
-- ✅ L7 proxy credential injection (no API keys stored in the sandbox)
-- ✅ Network policy enforcement (only Copilot API endpoints are reachable)
-- ✅ Full sandboxed filesystem (agent can't escape)
-- ✅ Verified end-to-end: `/models`, `/chat/completions`, `/mcp/readonly` all working
-
-### What this means for the Telegram bridge
-
-When you combine **this extension** + **OpenShell sandbox** + **Copilot CLI**, you get:
+## File Structure
 
 ```
-┌──────────────┐         ┌──────────────────────────────────────────────────┐
-│   Telegram   │         │  OpenShell Sandbox                               │
-│  (your phone)│ ◄─────► │  ┌──────────────┐    ┌──────────────────────┐   │
-│              │         │  │  Telegram     │ ◄► │  Copilot CLI Session │   │
-│              │         │  │  Bridge Ext   │    │  (full agent)        │   │
-│              │         │  └──────────────┘    └──────────────────────┘   │
-│              │         │  • Network policy: only Copilot API + Telegram  │
-│              │         │  • L7 credential injection (no stored keys)     │
-│              │         │  • Sandboxed filesystem                         │
-└──────────────┘         └──────────────────────────────────────────────────┘
+.github/extensions/telegram-bridge/
+  extension.mjs              ← The entire bridge (single file, ~420 lines)
+infra/
+  aws/                       ← AWS Terraform root module
+    main.tf                  ← EC2 + security group + file provisioners
+    variables.tf             ← Input variables (7 API keys + instance config)
+    outputs.tf               ← IP, SSH command, sandbox connect instructions
+    terraform.tfvars.example ← Template (committed)
+  shared/
+    files/
+      sandbox-policy.yaml    ← OpenShell network policy (default deny + allowlist)
+    scripts/
+      bootstrap.sh           ← VM user-data: Docker, Node.js, OpenShell, providers
+      setup-sandbox.sh       ← Host-side: create sandbox, upload secrets, start copilot
+      sandbox-setup.sh       ← Sandbox-side: git config, clone repo, .env, MCP config
+.env                         ← Your bot token (gitignored)
+.env.example                 ← Template
 ```
 
-**A secure, sandboxed, remote-controllable AI coding agent accessible from your phone.** That's OpenClaw's entire value proposition — but built on GitHub Copilot (the best coding agent available) running inside NVIDIA's security infrastructure, controlled from Telegram with a single-file extension.
+## Key Technical Details
 
-No gateway daemon. No custom agent runtime. No thousand-line framework. Just proven infrastructure composed together:
+### Credential Management
 
-| Layer | Technology | Role |
-|-------|-----------|------|
-| **Agent** | GitHub Copilot CLI | The actual AI coding agent |
-| **Sandbox** | NVIDIA OpenShell | Secure, isolated execution |
-| **Interface** | This extension | Remote access from Telegram |
-| **Auth** | OpenShell L7 proxy | Credential injection, zero stored keys |
+All credentials are injected via **OpenShell providers** — named credential bundles that are injected as environment variables at runtime. Credentials never touch the sandbox filesystem.
 
-**Safe OpenClaw.** And it's one PR merge away from reality.
+| Provider | Env Var | Used By |
+|----------|---------|---------|
+| copilot | `COPILOT_GITHUB_TOKEN` | Copilot CLI auth |
+| github | `GH_TOKEN` | gh CLI, git clone |
+| exa | `EXA_API_KEY` | Exa MCP server |
+| perplexity | `PERPLEXITY_API_KEY` | Perplexity MCP server |
+| youtube | `YOUTUBE_API_KEY` | YouTube MCP server |
+| zernio | `ZERNIO_API_KEY` | Zernio CLI |
+
+**Exception:** `TELEGRAM_BOT_TOKEN` is delivered via a raw secrets file uploaded into the sandbox because the extension reads it from a `.env` file (provider resolver strings don't work as raw token values).
+
+### Network Policy
+
+The sandbox enforces **default-deny** networking. Only explicitly allowlisted endpoints are reachable:
+
+| Endpoint | Mode | Why |
+|----------|------|-----|
+| GitHub API | L7 (tls:terminate) | Credential injection via proxy |
+| GitHub git | L7 (tls:terminate) | Credential injection for clone/push |
+| Copilot API | TCP passthrough | Avoids HTTP/2 coalescing → 421 errors |
+| Telegram | TCP passthrough | Avoids L7 issues with binary payloads |
+| Exa, Perplexity, YouTube, Zernio | L7 (tls:terminate) | Credential injection |
+| MS Learn | TCP passthrough | Public, no auth needed |
+| npm registry | TCP passthrough | Package installs |
+
+### Lessons Learned
+
+- **Extensions require `--experimental`** — the `EXTENSIONS` feature flag is gated behind experimental mode
+- **OpenShell providers inject resolver strings in SSH sessions** — not raw values. Files that need raw tokens (`.env`) must use uploaded secrets
+- **OpenShell `sandbox upload` creates nested directories** — pipe scripts via SSH stdin instead
+- **Copilot needs directory trust before loading extensions** — pre-configure `trusted_folders` in `~/.copilot/config.json`
+- **`ssh -tt` keeps Copilot alive** — `nohup` kills the TTY which Copilot requires for interactive mode
+- **Copilot base image may be outdated** — install latest via `npm install -g @github/copilot` to user-writable prefix
+
+## Future: Multi-Session Bridge Service ([#1](https://github.com/htekdev/gh-cli-telegram-extension/issues/1))
+
+The current architecture is one extension → one session → one conversation. We're working on a **standalone bridge service** that enables:
+
+### Multi-Session Conversations
+```
+┌─────────────────────────────────────────┐
+│  Bridge Service (Node.js)               │
+│                                         │
+│  Telegram Poller ──→ Message Router     │
+│                        ↓    ↓    ↓      │
+│                      Sess1 Sess2 Sess3  │
+│                      (CopilotClient SDK)│
+│                                         │
+│  Cron Scheduler ──→ Scheduled Prompts   │
+└─────────────────────────────────────────┘
+```
+
+- **Multiple parallel sessions** via the `CopilotClient` SDK (`createSession` / `resumeSession`)
+- **Telegram commands**: `/new` (create session), `/switch N` (resume), `/list` (show all)
+- **Auto-routing** via Telegram reply threads or forum topics
+
+### Scheduled Tasks
+- `node-cron` for recurring prompts: daily standups, PR summaries, notification digests
+- Configured via Telegram commands or config file
+
+### Azure Support
+- Azure Terraform module alongside the existing AWS module
+- Same shared scripts and policy, different cloud provider
+
+### Webhook Migration
+- Switch from long polling to Telegram webhooks for cleaner multi-instance architecture
+- Requires public URL (nginx reverse proxy or Cloudflare tunnel)
 
 ## Bot Commands
 
@@ -254,7 +253,7 @@ No gateway daemon. No custom agent runtime. No thousand-line framework. Just pro
 
 - Text messages only (photos, documents, voice not forwarded yet)
 - One bot token = one polling consumer (Telegram API constraint)
-- State resets on extension reload (chat ID re-links on first message)
+- Single session per deployment (multi-session coming in [#1](https://github.com/htekdev/gh-cli-telegram-extension/issues/1))
 
 ## License
 
