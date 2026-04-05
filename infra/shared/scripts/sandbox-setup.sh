@@ -78,7 +78,6 @@ echo "  Copilot: $(copilot --version 2>&1 | head -1)"
 echo ">>> Pre-trusting repo directory..."
 mkdir -p ~/.copilot
 if [ -f ~/.copilot/config.json ]; then
-  # Merge trusted_folders into existing config
   node -e '
     const fs = require("fs");
     const cfg = JSON.parse(fs.readFileSync(process.env.HOME + "/.copilot/config.json", "utf8"));
@@ -86,10 +85,11 @@ if [ -f ~/.copilot/config.json ]; then
     if (!cfg.trusted_folders.includes("/sandbox/gh-cli-telegram-extension")) {
       cfg.trusted_folders.push("/sandbox/gh-cli-telegram-extension");
     }
+    cfg.experimental = true;
     fs.writeFileSync(process.env.HOME + "/.copilot/config.json", JSON.stringify(cfg, null, 2));
   '
 else
-  echo '{"trusted_folders":["/sandbox/gh-cli-telegram-extension"]}' > ~/.copilot/config.json
+  echo '{"trusted_folders":["/sandbox/gh-cli-telegram-extension"],"experimental":true}' > ~/.copilot/config.json
 fi
 echo "  Directory pre-trusted"
 
