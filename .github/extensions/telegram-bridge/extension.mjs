@@ -244,9 +244,9 @@ async function pollLoop(session) {
           startTypingIndicator(chatId);
 
           // Fire-and-forget with setTimeout to avoid blocking the poll loop.
-          // sendAndWait would block until the agent finishes, starving polling.
+          // mode: "immediate" steers the agent mid-turn instead of queuing.
           setTimeout(() => {
-            session.send({ prompt: `[Telegram from ${from}]: ${msg.text}` }).catch((err) => {
+            session.send({ prompt: `[Telegram from ${from}]: ${msg.text}`, mode: "immediate" }).catch((err) => {
               session.log(
                 `⚠️ Failed to inject prompt: ${err.message}`,
                 { level: "warning" }
