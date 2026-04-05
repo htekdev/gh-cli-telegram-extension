@@ -1,0 +1,196 @@
+# OpenShell Policy: Copilot CLI Telegram Bridge
+# Sandbox runs Copilot CLI with Telegram bridge extension + MCP servers.
+#
+# Usage:
+#   openshell sandbox create --policy sandbox-policy.yaml --provider copilot \
+#     --provider github --provider exa --provider perplexity \
+#     --provider youtube --provider zernio --no-tty --keep -- true
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr
+    - /lib
+    - /etc
+    - /proc
+    - /dev/urandom
+  read_write:
+    - /sandbox
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: best_effort
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+network_policies:
+
+  # ── GitHub API (L7 credential injection) ──
+  github_api:
+    name: github-api
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/bin/curl
+      - path: /usr/bin/node
+      - path: /usr/bin/git
+      - path: /usr/bin/gh
+
+  # ── Git over HTTPS (L7 credential injection) ──
+  github_git:
+    name: github-git
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+      - host: codeload.github.com
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/git
+      - path: /usr/bin/gh
+      - path: /usr/lib/git-core/**
+
+  # ── GitHub Copilot API (TCP passthrough — avoids 421 from HTTP/2 coalescing) ──
+  github_copilot:
+    name: github-copilot-api
+    endpoints:
+      - host: api.githubcopilot.com
+        port: 443
+      - host: api.individual.githubcopilot.com
+        port: 443
+      - host: api.enterprise.githubcopilot.com
+        port: 443
+      - host: release-assets.githubusercontent.com
+        port: 443
+      - host: copilot-proxy.githubusercontent.com
+        port: 443
+      - host: default.exp-tas.com
+        port: 443
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/gh
+
+  # ── Telegram Bot API (TCP passthrough — avoids L7 issues with binary payloads) ──
+  telegram_api:
+    name: telegram-bot-api
+    endpoints:
+      - host: api.telegram.org
+        port: 443
+    binaries:
+      - path: /usr/bin/node
+
+  # ── Exa AI API (L7 credential injection) ──
+  exa_api:
+    name: exa-api
+    endpoints:
+      - host: api.exa.ai
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+      - host: mcp.exa.ai
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/curl
+
+  # ── Perplexity API (L7 credential injection) ──
+  perplexity_api:
+    name: perplexity-api
+    endpoints:
+      - host: api.perplexity.ai
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        rules:
+          - allow:
+              method: POST
+              path: /chat/completions
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/curl
+
+  # ── YouTube Data API v3 (L7 credential injection, read-only) ──
+  youtube_api:
+    name: youtube-data-api
+    endpoints:
+      - host: www.googleapis.com
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/curl
+
+  # ── Zernio API (L7 credential injection) ──
+  zernio_api:
+    name: zernio-api
+    endpoints:
+      - host: zernio.com
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/curl
+
+  zernio_legacy:
+    name: zernio-legacy
+    endpoints:
+      - host: getlate.dev
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/curl
+
+  # ── Microsoft Learn (public, no auth) ──
+  mslearn_api:
+    name: mslearn-api
+    endpoints:
+      - host: learn.microsoft.com
+        port: 443
+    binaries:
+      - path: /usr/bin/node
+
+  # ── npm registry (package installs) ──
+  npm_registry:
+    name: npm-registry
+    endpoints:
+      - host: registry.npmjs.org
+        port: 443
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/npm
+      - path: /usr/lib/node_modules/**

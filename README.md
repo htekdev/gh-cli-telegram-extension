@@ -116,8 +116,56 @@ TELEGRAM_CHAT_ID=123456789
 ```
 .github/extensions/telegram-bridge/
   extension.mjs          ← The entire bridge (single file, ~420 lines)
+infra/
+  aws/                   ← AWS Terraform root module
+    main.tf              ← EC2 + security group + Ubuntu 24.04 AMI
+    variables.tf         ← Input variables (API keys, instance config)
+    outputs.tf           ← IP, SSH command, deploy status
+    terraform.tfvars.example  ← Template (committed)
+  shared/
+    scripts/
+      bootstrap.sh       ← VM user-data: Docker, Node.js 22, pnpm, gh CLI
 .env                     ← Your bot token (gitignored)
 .env.example             ← Template
+```
+
+## AWS VM Deployment
+
+Deploy a ready-to-use Ubuntu 24.04 VM on AWS with all prerequisites pre-installed (Docker, Node.js 22, pnpm, GitHub CLI). API keys are injected via Terraform and available as environment variables on the VM.
+
+### Prerequisites
+
+- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
+- AWS CLI configured with EC2 permissions
+- Key pair named `gh-copilot-openclaw-key` (create one with `aws ec2 create-key-pair`)
+
+### Deploy
+
+```bash
+cd infra/aws
+cp terraform.tfvars.example terraform.tfvars
+# Fill in your API keys
+terraform init && terraform apply
+```
+
+In ~5 minutes your VM is ready with Docker, Node.js 22, pnpm, and gh CLI installed, plus all API keys in `/home/ubuntu/.env`.
+
+### SSH In
+
+```bash
+ssh -i gh-copilot-openclaw-key.pem ubuntu@$(cd infra/aws && terraform output -raw public_ip)
+```
+
+### Cost
+
+| Running 24/7 | Stopped |
+|-------------|---------|
+| ~$30/mo (t3.medium) | ~$1.60/mo (EBS only) |
+
+### Destroy
+
+```bash
+cd infra/aws && terraform destroy
 ```
 
 ## The Point
