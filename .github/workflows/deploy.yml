@@ -99,6 +99,31 @@ jobs:
         working-directory: infra/aws
         run: terraform destroy -auto-approve 2>&1 || echo "No existing infrastructure"
 
+      - name: Cleanup orphaned AWS resources
+        run: |
+          SG_NAME="${{ steps.env.outputs.project_name }}-${{ steps.env.outputs.env == 'dev' && 'dev' || 'prod' }}-sg"
+          # Terminate any running instances with matching project tag
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=${{ steps.env.outputs.project_name }}" \
+                      "Name=instance-state-name,Values=running,pending,stopping" \
+            --query "Reservations[].Instances[].InstanceId" --output text 2>/dev/null || true)
+          if [ -n "$INSTANCE_IDS" ] && [ "$INSTANCE_IDS" != "None" ]; then
+            echo "Terminating orphaned instances: $INSTANCE_IDS"
+            aws ec2 terminate-instances --instance-ids $INSTANCE_IDS 2>/dev/null || true
+            aws ec2 wait instance-terminated --instance-ids $INSTANCE_IDS 2>/dev/null || sleep 30
+          fi
+          # Delete orphaned security groups
+          SG_IDS=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${SG_NAME}" \
+            --query "SecurityGroups[].GroupId" --output text 2>/dev/null || true)
+          if [ -n "$SG_IDS" ] && [ "$SG_IDS" != "None" ]; then
+            for SG in $SG_IDS; do
+              echo "Deleting orphaned SG: $SG"
+              aws ec2 delete-security-group --group-id "$SG" 2>/dev/null || true
+            done
+          fi
+          echo "✅ Cleanup complete"
+
       - name: Terraform Apply (${{ steps.env.outputs.env }})
         working-directory: infra/aws
         run: |
