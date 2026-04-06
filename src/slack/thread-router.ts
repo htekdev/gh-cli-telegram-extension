@@ -17,7 +17,9 @@ export class SlackThreadRouter {
   }
 
   private getSessionId(channel: string, threadTs?: string): string {
-    return threadTs ? `slack-${channel}-${threadTs}` : `slack-${channel}-default`;
+    // Replace dots in thread_ts — CopilotClient rejects session IDs with dots
+    const safeTs = threadTs?.replace(/\./g, "-");
+    return safeTs ? `slack-${channel}-${safeTs}` : `slack-${channel}-default`;
   }
 
   getChatId(channel: string, threadTs?: string): string {

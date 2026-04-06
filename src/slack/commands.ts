@@ -84,7 +84,7 @@ export class SlackCommandHandler {
     );
     if (ts) {
       const chatId = this.threadRouter.getChatId(channel, ts);
-      await this.sessionManager.createSession(chatId, `slack-${channel}-${ts}`);
+      await this.sessionManager.createSession(chatId, `slack-${channel}-${ts.replace(/\./g, "-")}`);
     }
   }
 
@@ -95,7 +95,7 @@ export class SlackCommandHandler {
     );
     if (ts) {
       const chatId = this.threadRouter.getChatId(channel, ts);
-      await this.sessionManager.createSession(chatId, `slack-${channel}-${ts}`);
+      await this.sessionManager.createSession(chatId, `slack-${channel}-${ts.replace(/\./g, "-")}`);
       return "✅ New session started — check the thread";
     }
     return "⚠️ Failed to create session thread";

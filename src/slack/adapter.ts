@@ -56,14 +56,21 @@ export class SlackAdapter implements MessagingChannel {
       // Channel filter
       if (this.channelFilter && channel !== this.channelFilter) return;
 
-      // Check for message-based commands
-      if (this.commands.isCommand(text)) {
-        const handled = await this.commands.handle(channel, text, threadTs);
-        if (handled) return;
-      }
+      try {
+        // Check for message-based commands
+        if (this.commands.isCommand(text)) {
+          const handled = await this.commands.handle(channel, text, threadTs);
+          if (handled) return;
+        }
 
-      // Route to session via thread router
-      await this.threadRouter.routeMessage(channel, text, user, threadTs);
+        // Route to session via thread router
+        await this.threadRouter.routeMessage(channel, text, user, threadTs);
+      } catch (err) {
+        console.error("[slack] Error handling message:", err);
+        try {
+          await this.client.sendMessage(channel, "⚠️ Something went wrong processing that message. Please try again.", threadTs);
+        } catch { /* best-effort error reply */ }
+      }
     });
 
     // Handle slash commands
@@ -72,8 +79,13 @@ export class SlackAdapter implements MessagingChannel {
       const channel = body.channel_id as string;
       const threadTs = (body as Record<string, unknown>).thread_ts as string | undefined;
 
-      const response = await this.commands.handleSlashCommand(command, channel, threadTs);
-      await ack({ text: response });
+      try {
+        const response = await this.commands.handleSlashCommand(command, channel, threadTs);
+        await ack({ text: response });
+      } catch (err) {
+        console.error("[slack] Error handling slash command:", err);
+        await ack({ text: "⚠️ Something went wrong. Please try again." });
+      }
     });
 
     await this.client.connect();
