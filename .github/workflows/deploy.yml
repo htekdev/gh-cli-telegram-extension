@@ -84,77 +84,11 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem
           chmod 600 $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem
 
-      - name: Check for existing instance
-        id: check
-        run: |
-          INSTANCE_IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:Project,Values=${{ steps.env.outputs.project_name }}" \
-                      "Name=tag:Environment,Values=${{ steps.env.outputs.env == 'dev' && 'dev' || 'prod' }}" \
-                      "Name=instance-state-name,Values=running" \
-            --query "Reservations[].Instances[0].PublicIpAddress" --output text 2>/dev/null || true)
-
-          if [ -n "$INSTANCE_IP" ] && [ "$INSTANCE_IP" != "None" ]; then
-            # Verify SSH is reachable
-            if ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
-                -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
-                ubuntu@$INSTANCE_IP "echo reachable" 2>/dev/null; then
-              echo "exists=true" >> $GITHUB_OUTPUT
-              echo "ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
-              echo "✅ Existing instance found at $INSTANCE_IP — will reset sandbox only"
-            else
-              echo "exists=false" >> $GITHUB_OUTPUT
-              echo "⚠️ Instance found but SSH unreachable — will do full deploy"
-            fi
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "📦 No existing instance — will do full deploy"
-          fi
-
-      # ── Fast path: reset sandbox on existing instance ──
-      - name: Upload latest scripts
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          scp -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
-              -o StrictHostKeyChecking=no \
-              infra/shared/files/sandbox-policy.yaml \
-              infra/shared/scripts/setup-sandbox.sh \
-              infra/shared/scripts/sandbox-setup.sh \
-              infra/shared/scripts/reset-sandbox.sh \
-              ubuntu@${{ steps.check.outputs.ip }}:/home/ubuntu/
-
-      - name: Reset sandbox
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
-              -o StrictHostKeyChecking=no \
-              -o ServerAliveInterval=30 \
-              -o SendEnv=COPILOT_GITHUB_TOKEN \
-              -o SendEnv=GH_TOKEN \
-              -o SendEnv=EXA_API_KEY \
-              -o SendEnv=PERPLEXITY_API_KEY \
-              -o SendEnv=YOUTUBE_API_KEY \
-              -o SendEnv=ZERNIO_API_KEY \
-              -o SendEnv=TELEGRAM_BOT_TOKEN \
-              ubuntu@${{ steps.check.outputs.ip }} \
-              "export COPILOT_GITHUB_TOKEN='${{ secrets.TF_VAR_COPILOT_GITHUB_TOKEN }}' \
-               GH_TOKEN='${{ secrets.TF_VAR_GH_TOKEN }}' \
-               EXA_API_KEY='${{ secrets.TF_VAR_EXA_API_KEY }}' \
-               PERPLEXITY_API_KEY='${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}' \
-               YOUTUBE_API_KEY='${{ secrets.TF_VAR_YOUTUBE_API_KEY }}' \
-               ZERNIO_API_KEY='${{ secrets.TF_VAR_ZERNIO_API_KEY }}' \
-               TELEGRAM_BOT_TOKEN='${{ env.TF_VAR_telegram_bot_token }}' && \
-               sed -i 's/\r$//' ~/reset-sandbox.sh ~/setup-sandbox.sh ~/sandbox-setup.sh && \
-               bash ~/reset-sandbox.sh"
-          echo "PUBLIC_IP=${{ steps.check.outputs.ip }}" >> $GITHUB_ENV
-
-      # ── Full path: terraform destroy + apply ──
       - name: Terraform Init
-        if: steps.check.outputs.exists != 'true'
         working-directory: infra/aws
         run: terraform init
 
       - name: Download previous state
-        if: steps.check.outputs.exists != 'true'
         uses: actions/download-artifact@v4
         with:
           name: terraform-state-${{ steps.env.outputs.env }}
@@ -162,12 +96,10 @@ jobs:
         continue-on-error: true
 
       - name: Destroy existing ${{ steps.env.outputs.env }}
-        if: steps.check.outputs.exists != 'true'
         working-directory: infra/aws
         run: terraform destroy -auto-approve 2>&1 || echo "No existing infrastructure"
 
       - name: Cleanup orphaned AWS resources
-        if: steps.check.outputs.exists != 'true'
         run: |
           SG_NAME="${{ steps.env.outputs.project_name }}-${{ steps.env.outputs.env == 'dev' && 'dev' || 'prod' }}-sg"
           INSTANCE_IDS=$(aws ec2 describe-instances \
@@ -264,17 +196,15 @@ jobs:
 
       - name: Deploy summary
         run: |
-          IP="${{ env.PUBLIC_IP || steps.check.outputs.ip }}"
-          MODE="${{ steps.check.outputs.exists == 'true' && 'SANDBOX RESET' || 'FULL DEPLOY' }}"
           echo ""
           echo "══════════════════════════════════════════════════════"
-          echo "  ✅ ${{ steps.env.outputs.env }} ${MODE} COMPLETE"
-          echo "  IP: ${IP}"
-          echo "  SSH: ssh -i key.pem ubuntu@${IP}"
+          echo "  ✅ ${{ steps.env.outputs.env }} DEPLOY COMPLETE"
+          echo "  IP: ${{ env.PUBLIC_IP }}"
+          echo "  SSH: ssh -i key.pem ubuntu@${{ env.PUBLIC_IP }}"
           echo "══════════════════════════════════════════════════════"
 
       - name: Save Terraform state
-        if: always() && steps.check.outputs.exists != 'true'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: terraform-state-${{ steps.env.outputs.env }}

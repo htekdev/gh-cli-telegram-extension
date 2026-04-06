@@ -20,6 +20,7 @@ filesystem_policy:
     - /sandbox
     - /tmp
     - /dev/null
+    - /dev
 
 landlock:
   compatibility: best_effort
