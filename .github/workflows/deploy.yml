@@ -128,8 +128,23 @@ jobs:
           ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
               -o StrictHostKeyChecking=no \
               -o ServerAliveInterval=30 \
+              -o SendEnv=COPILOT_GITHUB_TOKEN \
+              -o SendEnv=GH_TOKEN \
+              -o SendEnv=EXA_API_KEY \
+              -o SendEnv=PERPLEXITY_API_KEY \
+              -o SendEnv=YOUTUBE_API_KEY \
+              -o SendEnv=ZERNIO_API_KEY \
+              -o SendEnv=TELEGRAM_BOT_TOKEN \
               ubuntu@${{ steps.check.outputs.ip }} \
-              "sed -i 's/\r$//' ~/reset-sandbox.sh ~/setup-sandbox.sh ~/sandbox-setup.sh && bash ~/reset-sandbox.sh"
+              "export COPILOT_GITHUB_TOKEN='${{ secrets.TF_VAR_COPILOT_GITHUB_TOKEN }}' \
+               GH_TOKEN='${{ secrets.TF_VAR_GH_TOKEN }}' \
+               EXA_API_KEY='${{ secrets.TF_VAR_EXA_API_KEY }}' \
+               PERPLEXITY_API_KEY='${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}' \
+               YOUTUBE_API_KEY='${{ secrets.TF_VAR_YOUTUBE_API_KEY }}' \
+               ZERNIO_API_KEY='${{ secrets.TF_VAR_ZERNIO_API_KEY }}' \
+               TELEGRAM_BOT_TOKEN='${{ env.TF_VAR_telegram_bot_token }}' && \
+               sed -i 's/\r$//' ~/reset-sandbox.sh ~/setup-sandbox.sh ~/sandbox-setup.sh && \
+               bash ~/reset-sandbox.sh"
           echo "PUBLIC_IP=${{ steps.check.outputs.ip }}" >> $GITHUB_ENV
 
       # ── Full path: terraform destroy + apply ──
