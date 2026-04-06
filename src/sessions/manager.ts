@@ -3,6 +3,13 @@ import type { Config } from "../config.js";
 import type { TelegramApi } from "../telegram/api.js";
 import type { SessionInfo, ChatState } from "./types.js";
 
+const CROSS_SESSION_CONTEXT =
+  "You are in a multi-session environment. Other sessions " +
+  "(including scheduled task sessions prefixed with 'cron-') may contain " +
+  "relevant context. If the user references work from another session or " +
+  "a scheduled task, use session store queries (sql tool with database " +
+  "'session_store') to search across sessions for the needed information.";
+
 type CopilotSession = Awaited<ReturnType<CopilotClient["createSession"]>>;
 
 export class SessionManager {
@@ -82,17 +89,25 @@ export class SessionManager {
 
     // Try to resume if this is a named session that might already exist
     let session: CopilotSession;
+    const sessionHooks = {
+      onUserPromptSubmitted: async () => ({
+        additionalContext: CROSS_SESSION_CONTEXT,
+      }),
+    };
+
     if (customSessionId && this.sessionMap.has(sessionId)) {
       session = this.sessionMap.get(sessionId)!;
     } else if (customSessionId) {
       try {
         session = await client.resumeSession(sessionId, {
           onPermissionRequest: approveAll,
+          hooks: sessionHooks,
         });
       } catch {
         session = await client.createSession({
           sessionId,
           onPermissionRequest: approveAll,
+          hooks: sessionHooks,
           infiniteSessions: {
             enabled: true,
             backgroundCompactionThreshold: 0.8,
@@ -104,6 +119,7 @@ export class SessionManager {
       session = await client.createSession({
         sessionId,
         onPermissionRequest: approveAll,
+        hooks: sessionHooks,
         infiniteSessions: {
           enabled: true,
           backgroundCompactionThreshold: 0.8,
@@ -221,6 +237,11 @@ export class SessionManager {
       const client = this.ensureClient();
       const session = await client.resumeSession(target.sessionId, {
         onPermissionRequest: approveAll,
+        hooks: {
+          onUserPromptSubmitted: async () => ({
+            additionalContext: CROSS_SESSION_CONTEXT,
+          }),
+        },
       });
       this.sessionMap.set(target.sessionId, session);
 
