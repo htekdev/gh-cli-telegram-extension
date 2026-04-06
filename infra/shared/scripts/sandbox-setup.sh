@@ -1,6 +1,7 @@
 #!/bin/bash
 # sandbox-setup.sh — Runs INSIDE the OpenShell sandbox.
-# Configures git, clones repo, generates MCP config, starts Copilot CLI.
+# Configures git, clones repo, builds service, generates MCP config.
+set -euo pipefail
 #
 # ALL credentials are injected as env vars by OpenShell providers:
 #   GH_TOKEN, COPILOT_GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
@@ -46,16 +47,12 @@ echo ">>> Authenticating gh CLI..."
 echo "$GH_TOKEN" | gh auth login --with-token 2>&1 || echo "  gh auth skipped"
 
 # ── Read git deployment info ──────────────────────────────────────────────────
-# OpenShell upload may nest files — try multiple paths
-GIT_REF="main"
-for p in /sandbox/secrets/git-ref /sandbox/secrets/git-ref/git-ref; do
-  if [ -f "$p" ]; then GIT_REF=$(cat "$p"); break; fi
-done
-GIT_REPO="https://github.com/htekdev/gh-cli-telegram-extension.git"
-for p in /sandbox/secrets/git-repo /sandbox/secrets/git-repo/git-repo; do
-  if [ -f "$p" ]; then GIT_REPO=$(cat "$p"); break; fi
-done
+# GIT_REF and GIT_REPO are sourced from raw-secrets.env above
+GIT_REF="${GIT_REF:-main}"
+GIT_REPO="${GIT_REPO:-https://github.com/htekdev/gh-cli-telegram-extension.git}"
 REPO_DIR=~/copilot-telegram-bridge
+echo "  Git ref: $GIT_REF"
+echo "  Git repo: $GIT_REPO"
 
 # ── Clone repo ───────────────────────────────────────────────────────────────
 echo ">>> Cloning repo ($GIT_REPO @ $GIT_REF)..."
@@ -71,8 +68,8 @@ echo "  Repo ready at $(git rev-parse --short HEAD)"
 
 # ── Build the bridge service ─────────────────────────────────────────────────
 echo ">>> Installing dependencies and building..."
-npm install 2>&1 | tail -3
-npm run build 2>&1 | tail -3
+npm install 2>&1
+npm run build 2>&1
 echo "  Build complete"
 
 # ── Create .env for bridge service ────────────────────────────────────────────

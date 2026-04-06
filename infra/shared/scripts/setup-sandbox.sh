@@ -83,14 +83,11 @@ fi
 echo ">>> Sandbox: $SANDBOX_NAME"
 echo "$SANDBOX_NAME" > "$HOME/.sandbox-name"
 
-# ── Upload raw secrets + git info into sandbox ───────────────────────────────
-# TELEGRAM_BOT_TOKEN needs raw value for .env (provider gives resolver string)
-# GIT_REF and GIT_REPO tell sandbox-setup.sh which code to checkout
-echo ">>> Uploading raw secrets and git info into sandbox..."
+# ── Upload raw secrets into sandbox ───────────────────────────────────────────
+# Contains TELEGRAM_BOT_TOKEN, GIT_REF, and GIT_REPO
+echo ">>> Uploading raw secrets into sandbox..."
 openshell sandbox upload "$SANDBOX_NAME" "$HOME/raw-secrets.env" /sandbox/secrets 2>&1
-openshell sandbox upload "$SANDBOX_NAME" "$HOME/git-ref" /sandbox/secrets 2>&1
-openshell sandbox upload "$SANDBOX_NAME" "$HOME/git-repo" /sandbox/secrets 2>&1
-echo "  Files uploaded"
+echo "  Secrets uploaded"
 
 # ── Run internal setup via SSH proxy ─────────────────────────────────────────
 # Pipe the setup script via stdin to avoid openshell upload path issues

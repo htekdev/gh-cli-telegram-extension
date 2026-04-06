@@ -104,10 +104,13 @@ echo "  Credential files written"
 # ── Write raw secrets for sandbox upload ─────────────────────────────────────
 # Provider env vars in SSH sessions resolve to openshell:resolve:... strings,
 # not raw values. TELEGRAM_BOT_TOKEN needs to be written as a raw value into
-# the .env file for the Telegram bridge extension to read.
+# the .env file for the bridge service to read. GIT_REF and GIT_REPO are also
+# included here since separate file uploads have path issues with OpenShell.
 echo ">>> Writing raw secrets..."
 cat > /home/ubuntu/raw-secrets.env << ENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+GIT_REF=$GIT_REF
+GIT_REPO=$GIT_REPO
 ENVEOF
 chmod 600 /home/ubuntu/raw-secrets.env
 chown ubuntu:ubuntu /home/ubuntu/raw-secrets.env
