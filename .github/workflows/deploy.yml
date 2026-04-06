@@ -42,6 +42,8 @@ jobs:
       TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
       TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
       TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
+      TF_VAR_slack_bot_token: ${{ secrets.TF_VAR_SLACK_BOT_TOKEN }}
+      TF_VAR_slack_app_token: ${{ secrets.TF_VAR_SLACK_APP_TOKEN }}
       TF_VAR_git_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       TF_VAR_git_repo: https://github.com/${{ github.repository }}.git
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -244,6 +246,8 @@ jobs:
       TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
       TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
       TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
+      TF_VAR_slack_bot_token: ${{ secrets.TF_VAR_SLACK_BOT_TOKEN }}
+      TF_VAR_slack_app_token: ${{ secrets.TF_VAR_SLACK_APP_TOKEN }}
       TF_VAR_git_ref: ${{ github.sha }}
       TF_VAR_git_repo: https://github.com/${{ github.repository }}.git
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

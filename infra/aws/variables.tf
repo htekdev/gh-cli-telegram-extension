@@ -89,6 +89,20 @@ variable "zernio_api_key" {
   sensitive   = true
 }
 
+variable "slack_bot_token" {
+  description = "Slack bot token (xoxb-...) for posting messages"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "slack_app_token" {
+  description = "Slack app-level token (xapp-...) for Socket Mode"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # ── Deployment ────────────────────────────────────────────────────────────────
 
 variable "git_ref" {

@@ -26,6 +26,8 @@ EXA_API_KEY="${exa_api_key}"
 PERPLEXITY_API_KEY="${perplexity_api_key}"
 YOUTUBE_API_KEY="${youtube_api_key}"
 ZERNIO_API_KEY="${zernio_api_key}"
+SLACK_BOT_TOKEN="${slack_bot_token}"
+SLACK_APP_TOKEN="${slack_app_token}"
 PROJECT_NAME="${project_name}"
 GIT_REF="${git_ref}"
 GIT_REPO="${git_repo}"
@@ -109,6 +111,8 @@ echo "  Credential files written"
 echo ">>> Writing raw secrets..."
 cat > /home/ubuntu/raw-secrets.env << ENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
+SLACK_APP_TOKEN=$SLACK_APP_TOKEN
 GIT_REF=$GIT_REF
 GIT_REPO=$GIT_REPO
 ENVEOF
