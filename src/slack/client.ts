@@ -1,13 +1,23 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
+import { HttpsProxyAgent } from "https-proxy-agent";
 
 export class SlackClient {
   private readonly socketMode: SocketModeClient;
   private readonly web: WebClient;
 
   constructor(appToken: string, botToken: string) {
-    this.socketMode = new SocketModeClient({ appToken });
-    this.web = new WebClient(botToken);
+    // OpenShell sandbox routes all traffic through an HTTP proxy.
+    // Node.js fetch() respects HTTPS_PROXY automatically, but the Slack
+    // Socket Mode WebSocket client needs an explicit proxy agent.
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
+    const agent = proxyUrl ? new HttpsProxyAgent(proxyUrl) : undefined;
+
+    this.socketMode = new SocketModeClient({
+      appToken,
+      clientOptions: { agent },
+    });
+    this.web = new WebClient(botToken, { agent });
   }
 
   getSocketMode(): SocketModeClient {

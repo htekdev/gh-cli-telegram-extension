@@ -16,6 +16,7 @@
     "@github/copilot-sdk": "^0.2.1",
     "@slack/socket-mode": "^2.0.6",
     "@slack/web-api": "^7.15.0",
+    "https-proxy-agent": "^9.0.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
