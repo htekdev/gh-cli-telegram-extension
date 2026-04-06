@@ -43,8 +43,15 @@ for PROV_NAME in copilot github exa perplexity youtube zernio; do
   KEY_VAL=$(cat "$KEY_FILE" 2>/dev/null || true)
 
   if [ -n "$KEY_VAL" ]; then
-    openshell provider create --name "$PROV_NAME" --type generic \
-      --credential "${CRED_NAME}=${KEY_VAL}" 2>&1
+    if [ "$PROV_NAME" = "github" ]; then
+      # gh CLI uses GH_TOKEN, github-mcp-server uses GITHUB_TOKEN
+      openshell provider create --name "$PROV_NAME" --type generic \
+        --credential "GH_TOKEN=${KEY_VAL}" \
+        --credential "GITHUB_TOKEN=${KEY_VAL}" 2>&1
+    else
+      openshell provider create --name "$PROV_NAME" --type generic \
+        --credential "${CRED_NAME}=${KEY_VAL}" 2>&1
+    fi
     rm -f "$KEY_FILE"
     echo "  $PROV_NAME provider created"
   else
