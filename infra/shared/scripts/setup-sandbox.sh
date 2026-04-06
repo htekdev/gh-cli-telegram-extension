@@ -83,11 +83,14 @@ fi
 echo ">>> Sandbox: $SANDBOX_NAME"
 echo "$SANDBOX_NAME" > "$HOME/.sandbox-name"
 
-# ── Upload raw secrets into sandbox ──────────────────────────────────────────
+# ── Upload raw secrets + git info into sandbox ───────────────────────────────
 # TELEGRAM_BOT_TOKEN needs raw value for .env (provider gives resolver string)
-echo ">>> Uploading raw secrets into sandbox..."
+# GIT_REF and GIT_REPO tell sandbox-setup.sh which code to checkout
+echo ">>> Uploading raw secrets and git info into sandbox..."
 openshell sandbox upload "$SANDBOX_NAME" "$HOME/raw-secrets.env" /sandbox/secrets 2>&1
-echo "  Secrets uploaded"
+openshell sandbox upload "$SANDBOX_NAME" "$HOME/git-ref" /sandbox/secrets 2>&1
+openshell sandbox upload "$SANDBOX_NAME" "$HOME/git-repo" /sandbox/secrets 2>&1
+echo "  Files uploaded"
 
 # ── Run internal setup via SSH proxy ─────────────────────────────────────────
 # Pipe the setup script via stdin to avoid openshell upload path issues
@@ -99,28 +102,27 @@ cat "$HOME/sandbox-setup.sh" | \
     -o "ProxyCommand=$HOME/.local/bin/openshell ssh-proxy --gateway-name openshell --name $SANDBOX_NAME" \
     "sandbox@$SANDBOX_NAME" "bash -s"
 
-# ── Start Copilot CLI inside sandbox ─────────────────────────────────────────
-# SSH with -tt forces TTY allocation, keeping copilot's interactive mode alive.
-# The SSH command is backgrounded on the host with nohup so it survives
-# the bootstrap SSH session ending.
-echo ">>> Starting Copilot CLI inside sandbox..."
-nohup ssh -tt -o StrictHostKeyChecking=no \
+# ── Start bridge service inside sandbox ───────────────────────────────────────
+# The bridge service is a standalone Node.js process that creates CopilotClient
+# internally. No need for TTY allocation (-tt) since it's not interactive.
+echo ">>> Starting bridge service inside sandbox..."
+nohup ssh -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o LogLevel=ERROR \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=1000 \
     -o "ProxyCommand=$HOME/.local/bin/openshell ssh-proxy --gateway-name openshell --name $SANDBOX_NAME" \
     "sandbox@$SANDBOX_NAME" \
-    "cd ~/gh-cli-telegram-extension && export PATH=~/.npm-global/bin:\$PATH && copilot --yolo --autopilot --no-ask-user --experimental -i 'You are now connected via the Telegram bridge. Say hello to Telegram.'" \
-    > /home/ubuntu/copilot-session.log 2>&1 &
-COPILOT_SSH_PID=$!
-echo "$COPILOT_SSH_PID" > /home/ubuntu/.copilot-pid
+    "cd ~/copilot-telegram-bridge && npm start" \
+    > /home/ubuntu/bridge-service.log 2>&1 &
+BRIDGE_PID=$!
+echo "$BRIDGE_PID" > /home/ubuntu/.bridge-pid
 sleep 5
-if kill -0 "$COPILOT_SSH_PID" 2>/dev/null; then
-  echo "  Copilot CLI started (host SSH PID: $COPILOT_SSH_PID)"
-  echo "  Log: ~/copilot-session.log"
+if kill -0 "$BRIDGE_PID" 2>/dev/null; then
+  echo "  Bridge service started (host SSH PID: $BRIDGE_PID)"
+  echo "  Log: ~/bridge-service.log"
 else
-  echo "  WARNING: Copilot may not have started — check ~/copilot-session.log"
+  echo "  WARNING: Bridge may not have started — check ~/bridge-service.log"
 fi
 
 echo "=== Sandbox Setup completed at $(date -u) ==="

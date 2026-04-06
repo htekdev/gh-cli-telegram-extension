@@ -1,0 +1,60 @@
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { z } from "zod";
+
+const configSchema = z.object({
+  telegramBotToken: z.string().min(1, "TELEGRAM_BOT_TOKEN is required"),
+  telegramChatId: z.string().optional(),
+  cliUrl: z.string().optional(),
+  cliPort: z.coerce.number().int().positive().optional(),
+  cronEnabled: z.boolean().default(false),
+  logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+});
+
+export type Config = z.infer<typeof configSchema>;
+
+function parseEnvFile(filePath: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  if (!existsSync(filePath)) return vars;
+
+  const content = readFileSync(filePath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    vars[key] = value;
+  }
+  return vars;
+}
+
+function getEnv(key: string, envFile: Record<string, string>): string | undefined {
+  return process.env[key] || envFile[key] || undefined;
+}
+
+export function loadConfig(cwd: string = process.cwd()): Config {
+  const envFilePath = resolve(cwd, ".env");
+  const envFile = parseEnvFile(envFilePath);
+
+  const raw = {
+    telegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", envFile) ?? "",
+    telegramChatId: getEnv("TELEGRAM_CHAT_ID", envFile),
+    cliUrl: getEnv("CLI_URL", envFile),
+    cliPort: getEnv("CLI_PORT", envFile),
+    cronEnabled:
+      getEnv("CRON_ENABLED", envFile) === "true" ||
+      getEnv("CRON_ENABLED", envFile) === "1",
+    logLevel: getEnv("LOG_LEVEL", envFile) ?? "info",
+  };
+
+  return configSchema.parse(raw);
+}

@@ -42,6 +42,8 @@ jobs:
       TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
       TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
       TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
+      TF_VAR_git_ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      TF_VAR_git_repo: https://github.com/${{ github.repository }}.git
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-1
@@ -179,12 +181,12 @@ jobs:
             sleep 15
           done
 
-      - name: Verify Copilot running
+      - name: Verify bridge service running
         run: |
           ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
               -o StrictHostKeyChecking=no \
               ubuntu@${{ env.PUBLIC_IP }} \
-              'ps aux | grep copilot | grep -v grep | head -3'
+              'ps aux | grep "node dist/index" | grep -v grep | head -3'
 
       - name: Verify Telegram polling
         run: |
@@ -195,7 +197,7 @@ jobs:
               'export PATH=$HOME/.local/bin:$PATH && openshell logs $(cat ~/.sandbox-name) --since 2m 2>/dev/null | grep "api.telegram" | wc -l' 2>/dev/null || echo "0")
 
           echo "Telegram requests in last 2 min: $TELEGRAM_COUNT"
-          [ "$TELEGRAM_COUNT" -gt "0" ] && echo "✅ Telegram bridge polling!" || echo "⚠️ Extension may still be loading"
+          [ "$TELEGRAM_COUNT" -gt "0" ] && echo "✅ Bridge service polling!" || echo "⚠️ Bridge may still be starting"
 
       - name: Deploy summary
         run: |
@@ -234,6 +236,8 @@ jobs:
       TF_VAR_perplexity_api_key: ${{ secrets.TF_VAR_PERPLEXITY_API_KEY }}
       TF_VAR_youtube_api_key: ${{ secrets.TF_VAR_YOUTUBE_API_KEY }}
       TF_VAR_zernio_api_key: ${{ secrets.TF_VAR_ZERNIO_API_KEY }}
+      TF_VAR_git_ref: ${{ github.sha }}
+      TF_VAR_git_repo: https://github.com/${{ github.repository }}.git
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-1

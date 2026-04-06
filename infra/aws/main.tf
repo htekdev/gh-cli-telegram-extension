@@ -98,6 +98,8 @@ resource "aws_instance" "main" {
     youtube_api_key      = var.youtube_api_key
     zernio_api_key       = var.zernio_api_key
     project_name         = var.project_name
+    git_ref              = var.git_ref
+    git_repo             = var.git_repo
   })
 
   connection {

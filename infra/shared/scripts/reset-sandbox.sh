@@ -8,15 +8,15 @@ export PATH="$HOME/.local/bin:$PATH"
 
 echo "=== Sandbox Reset started at $(date -u) ==="
 
-# ── Kill existing Copilot SSH session ────────────────────────────────────────
-echo ">>> Stopping existing Copilot session..."
-COPILOT_PID=$(cat ~/.copilot-pid 2>/dev/null || true)
-if [ -n "$COPILOT_PID" ] && kill -0 "$COPILOT_PID" 2>/dev/null; then
-  kill "$COPILOT_PID" 2>/dev/null || true
+# ── Kill existing bridge service SSH session ─────────────────────────────────
+echo ">>> Stopping existing bridge service..."
+BRIDGE_PID=$(cat ~/.bridge-pid 2>/dev/null || true)
+if [ -n "$BRIDGE_PID" ] && kill -0 "$BRIDGE_PID" 2>/dev/null; then
+  kill "$BRIDGE_PID" 2>/dev/null || true
   sleep 2
-  echo "  Copilot SSH session stopped (PID: $COPILOT_PID)"
+  echo "  Bridge SSH session stopped (PID: $BRIDGE_PID)"
 else
-  echo "  No running Copilot session found"
+  echo "  No running bridge service found"
 fi
 
 # ── Destroy existing sandbox ─────────────────────────────────────────────────
@@ -43,7 +43,8 @@ echo "  Providers deleted"
 
 # ── Pull latest code ─────────────────────────────────────────────────────────
 echo ">>> Pulling latest code..."
-cd ~/gh-cli-telegram-extension 2>/dev/null && git pull 2>&1 || echo "  No local repo to update"
+GIT_REF=$(cat ~/git-ref 2>/dev/null || echo "main")
+cd ~/copilot-telegram-bridge 2>/dev/null && git fetch origin && git checkout "$GIT_REF" 2>&1 || echo "  No local repo to update"
 cd ~
 
 # ── Write credential files for provider recreation ───────────────────────────

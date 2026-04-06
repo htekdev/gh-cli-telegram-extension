@@ -45,33 +45,38 @@ echo "  git configured"
 echo ">>> Authenticating gh CLI..."
 echo "$GH_TOKEN" | gh auth login --with-token 2>&1 || echo "  gh auth skipped"
 
-# ── Clone repo ───────────────────────────────────────────────────────────────
-echo ">>> Cloning gh-cli-telegram-extension..."
-if [ -d ~/gh-cli-telegram-extension ]; then
-  echo "  Already exists, pulling latest"
-  cd ~/gh-cli-telegram-extension && git pull
-else
-  git clone https://github.com/htekdev/gh-cli-telegram-extension.git ~/gh-cli-telegram-extension
-fi
-cd ~/gh-cli-telegram-extension
-echo "  Repo ready"
+# ── Read git deployment info ──────────────────────────────────────────────────
+GIT_REF=$(cat /sandbox/secrets/git-ref 2>/dev/null || echo "main")
+GIT_REPO=$(cat /sandbox/secrets/git-repo 2>/dev/null || echo "https://github.com/htekdev/gh-cli-telegram-extension.git")
+REPO_DIR=~/copilot-telegram-bridge
 
-# ── Create .env for Telegram bridge extension ────────────────────────────────
+# ── Clone repo ───────────────────────────────────────────────────────────────
+echo ">>> Cloning repo ($GIT_REPO @ $GIT_REF)..."
+if [ -d "$REPO_DIR" ]; then
+  echo "  Already exists, fetching latest"
+  cd "$REPO_DIR" && git fetch origin
+else
+  git clone "$GIT_REPO" "$REPO_DIR"
+fi
+cd "$REPO_DIR"
+git checkout "$GIT_REF"
+echo "  Repo ready at $(git rev-parse --short HEAD)"
+
+# ── Build the bridge service ─────────────────────────────────────────────────
+echo ">>> Installing dependencies and building..."
+npm install 2>&1 | tail -3
+npm run build 2>&1 | tail -3
+echo "  Build complete"
+
+# ── Create .env for bridge service ────────────────────────────────────────────
 echo ">>> Creating .env..."
-cat > ~/gh-cli-telegram-extension/.env << DOTENVEOF
+cat > "$REPO_DIR/.env" << DOTENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID=7729308746
 CRON_ENABLED=true
 DOTENVEOF
-chmod 600 ~/gh-cli-telegram-extension/.env
+chmod 600 "$REPO_DIR/.env"
 echo "  .env created"
-
-# ── Update Copilot CLI ────────────────────────────────────────────────────────
-# Base image may have an older version. Install latest to user-writable location.
-echo ">>> Updating Copilot CLI..."
-npm install -g @github/copilot@latest --prefix ~/.npm-global 2>&1 | tail -3 || true
-export PATH="$HOME/.npm-global/bin:$PATH"
-echo "  Copilot: $(copilot --version 2>&1 | head -1)"
 
 # ── Pre-trust the repo directory ──────────────────────────────────────────────
 # Copilot prompts "do you trust this directory?" on first launch.
@@ -83,14 +88,14 @@ if [ -f ~/.copilot/config.json ]; then
     const fs = require("fs");
     const cfg = JSON.parse(fs.readFileSync(process.env.HOME + "/.copilot/config.json", "utf8"));
     cfg.trusted_folders = cfg.trusted_folders || [];
-    if (!cfg.trusted_folders.includes("/sandbox/gh-cli-telegram-extension")) {
-      cfg.trusted_folders.push("/sandbox/gh-cli-telegram-extension");
+    if (!cfg.trusted_folders.includes("/sandbox/copilot-telegram-bridge")) {
+      cfg.trusted_folders.push("/sandbox/copilot-telegram-bridge");
     }
     cfg.experimental = true;
     fs.writeFileSync(process.env.HOME + "/.copilot/config.json", JSON.stringify(cfg, null, 2));
   '
 else
-  echo '{"trusted_folders":["/sandbox/gh-cli-telegram-extension"],"experimental":true}' > ~/.copilot/config.json
+  echo '{"trusted_folders":["/sandbox/copilot-telegram-bridge"],"experimental":true}' > ~/.copilot/config.json
 fi
 echo "  Directory pre-trusted"
 
@@ -136,5 +141,5 @@ MCPEOF
 echo "  MCP config generated"
 
 echo "=== Sandbox setup complete ==="
-echo "  Repo: ~/gh-cli-telegram-extension"
+echo "  Repo: $REPO_DIR ($(git rev-parse --short HEAD))"
 echo "  MCP:  ~/.copilot/mcp-config.json"

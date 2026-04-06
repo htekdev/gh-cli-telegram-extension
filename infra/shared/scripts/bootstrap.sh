@@ -27,6 +27,8 @@ PERPLEXITY_API_KEY="${perplexity_api_key}"
 YOUTUBE_API_KEY="${youtube_api_key}"
 ZERNIO_API_KEY="${zernio_api_key}"
 PROJECT_NAME="${project_name}"
+GIT_REF="${git_ref}"
+GIT_REPO="${git_repo}"
 
 LOG="/var/log/bootstrap.log"
 exec > >(tee -a "$LOG") 2>&1
@@ -138,6 +140,13 @@ PROFILEEOF'
 # ── Authenticate gh CLI ─────────────────────────────────────────────────────
 echo ">>> Authenticating gh CLI..."
 su - ubuntu -c "echo '$GH_TOKEN' | gh auth login --with-token" || echo "  gh auth skipped"
+
+# ── Write git ref and repo for sandbox setup ─────────────────────────────────
+echo ">>> Writing git deployment info..."
+echo "$GIT_REF" > /home/ubuntu/git-ref
+echo "$GIT_REPO" > /home/ubuntu/git-repo
+chmod 644 /home/ubuntu/git-ref /home/ubuntu/git-repo
+chown ubuntu:ubuntu /home/ubuntu/git-ref /home/ubuntu/git-repo
 
 # ── Fix line endings on uploaded scripts ─────────────────────────────────────
 # File provisioners on Windows upload with CRLF — bash chokes on \r.
