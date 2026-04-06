@@ -124,6 +124,11 @@ resource "aws_instance" "main" {
     destination = "/home/ubuntu/sandbox-setup.sh"
   }
 
+  provisioner "file" {
+    source      = "${path.module}/../shared/scripts/reset-sandbox.sh"
+    destination = "/home/ubuntu/reset-sandbox.sh"
+  }
+
   tags = {
     Name        = "${var.project_name}-${var.environment}"
     Project     = var.project_name

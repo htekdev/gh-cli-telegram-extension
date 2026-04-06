@@ -84,11 +84,62 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem
           chmod 600 $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem
 
+      - name: Check for existing instance
+        id: check
+        run: |
+          INSTANCE_IP=$(aws ec2 describe-instances \
+            --filters "Name=tag:Project,Values=${{ steps.env.outputs.project_name }}" \
+                      "Name=tag:Environment,Values=${{ steps.env.outputs.env == 'dev' && 'dev' || 'prod' }}" \
+                      "Name=instance-state-name,Values=running" \
+            --query "Reservations[].Instances[0].PublicIpAddress" --output text 2>/dev/null || true)
+
+          if [ -n "$INSTANCE_IP" ] && [ "$INSTANCE_IP" != "None" ]; then
+            # Verify SSH is reachable
+            if ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
+                -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+                ubuntu@$INSTANCE_IP "echo reachable" 2>/dev/null; then
+              echo "exists=true" >> $GITHUB_OUTPUT
+              echo "ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+              echo "✅ Existing instance found at $INSTANCE_IP — will reset sandbox only"
+            else
+              echo "exists=false" >> $GITHUB_OUTPUT
+              echo "⚠️ Instance found but SSH unreachable — will do full deploy"
+            fi
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "📦 No existing instance — will do full deploy"
+          fi
+
+      # ── Fast path: reset sandbox on existing instance ──
+      - name: Upload latest scripts
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          scp -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
+              -o StrictHostKeyChecking=no \
+              infra/shared/files/sandbox-policy.yaml \
+              infra/shared/scripts/setup-sandbox.sh \
+              infra/shared/scripts/sandbox-setup.sh \
+              infra/shared/scripts/reset-sandbox.sh \
+              ubuntu@${{ steps.check.outputs.ip }}:/home/ubuntu/
+
+      - name: Reset sandbox
+        if: steps.check.outputs.exists == 'true'
+        run: |
+          ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
+              -o StrictHostKeyChecking=no \
+              -o ServerAliveInterval=30 \
+              ubuntu@${{ steps.check.outputs.ip }} \
+              "sed -i 's/\r$//' ~/reset-sandbox.sh ~/setup-sandbox.sh ~/sandbox-setup.sh && bash ~/reset-sandbox.sh"
+          echo "PUBLIC_IP=${{ steps.check.outputs.ip }}" >> $GITHUB_ENV
+
+      # ── Full path: terraform destroy + apply ──
       - name: Terraform Init
+        if: steps.check.outputs.exists != 'true'
         working-directory: infra/aws
         run: terraform init
 
       - name: Download previous state
+        if: steps.check.outputs.exists != 'true'
         uses: actions/download-artifact@v4
         with:
           name: terraform-state-${{ steps.env.outputs.env }}
@@ -96,13 +147,14 @@ jobs:
         continue-on-error: true
 
       - name: Destroy existing ${{ steps.env.outputs.env }}
+        if: steps.check.outputs.exists != 'true'
         working-directory: infra/aws
         run: terraform destroy -auto-approve 2>&1 || echo "No existing infrastructure"
 
       - name: Cleanup orphaned AWS resources
+        if: steps.check.outputs.exists != 'true'
         run: |
           SG_NAME="${{ steps.env.outputs.project_name }}-${{ steps.env.outputs.env == 'dev' && 'dev' || 'prod' }}-sg"
-          # Terminate any running instances with matching project tag
           INSTANCE_IDS=$(aws ec2 describe-instances \
             --filters "Name=tag:Project,Values=${{ steps.env.outputs.project_name }}" \
                       "Name=instance-state-name,Values=running,pending,stopping" \
@@ -112,7 +164,6 @@ jobs:
             aws ec2 terminate-instances --instance-ids $INSTANCE_IDS 2>/dev/null || true
             aws ec2 wait instance-terminated --instance-ids $INSTANCE_IDS 2>/dev/null || sleep 30
           fi
-          # Delete orphaned security groups
           SG_IDS=$(aws ec2 describe-security-groups \
             --filters "Name=group-name,Values=${SG_NAME}" \
             --query "SecurityGroups[].GroupId" --output text 2>/dev/null || true)
@@ -125,6 +176,7 @@ jobs:
           echo "✅ Cleanup complete"
 
       - name: Terraform Apply (${{ steps.env.outputs.env }})
+        if: steps.check.outputs.exists != 'true'
         working-directory: infra/aws
         run: |
           terraform apply -auto-approve
@@ -132,9 +184,9 @@ jobs:
           echo "INSTANCE_ID=$(terraform output -raw instance_id)" >> $GITHUB_ENV
 
       - name: Wait for bootstrap
+        if: steps.check.outputs.exists != 'true'
         run: |
           echo "⏳ Waiting for bootstrap (${{ steps.env.outputs.env }})..."
-          echo "   Instance: ${{ env.INSTANCE_ID }}"
           echo "   IP: ${{ env.PUBLIC_IP }}"
 
           for i in $(seq 1 30); do
@@ -197,16 +249,17 @@ jobs:
 
       - name: Deploy summary
         run: |
+          IP="${{ env.PUBLIC_IP || steps.check.outputs.ip }}"
+          MODE="${{ steps.check.outputs.exists == 'true' && 'SANDBOX RESET' || 'FULL DEPLOY' }}"
           echo ""
           echo "══════════════════════════════════════════════════════"
-          echo "  ✅ ${{ steps.env.outputs.env }} DEPLOY COMPLETE"
-          echo "  Instance: ${{ env.INSTANCE_ID }}"
-          echo "  IP: ${{ env.PUBLIC_IP }}"
-          echo "  SSH: ssh -i key.pem ubuntu@${{ env.PUBLIC_IP }}"
+          echo "  ✅ ${{ steps.env.outputs.env }} ${MODE} COMPLETE"
+          echo "  IP: ${IP}"
+          echo "  SSH: ssh -i key.pem ubuntu@${IP}"
           echo "══════════════════════════════════════════════════════"
 
       - name: Save Terraform state
-        if: always()
+        if: always() && steps.check.outputs.exists != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: terraform-state-${{ steps.env.outputs.env }}
