@@ -183,10 +183,18 @@ jobs:
 
       - name: Verify bridge service running
         run: |
+          echo "=== Host SSH process ==="
           ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
               -o StrictHostKeyChecking=no \
               ubuntu@${{ env.PUBLIC_IP }} \
-              'ps aux | grep "node dist/index" | grep -v grep | head -3'
+              'ps aux | grep "copilot-telegram-bridge" | grep -v grep | head -3'
+
+          echo ""
+          echo "=== Bridge service log (last 20 lines) ==="
+          ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
+              -o StrictHostKeyChecking=no \
+              ubuntu@${{ env.PUBLIC_IP }} \
+              'tail -20 ~/bridge-service.log 2>/dev/null || echo "No log file found"'
 
       - name: Verify Telegram polling
         run: |
@@ -194,9 +202,9 @@ jobs:
           TELEGRAM_COUNT=$(ssh -i $GITHUB_WORKSPACE/gh-copilot-openclaw-key.pem \
               -o StrictHostKeyChecking=no \
               ubuntu@${{ env.PUBLIC_IP }} \
-              'export PATH=$HOME/.local/bin:$PATH && openshell logs $(cat ~/.sandbox-name) --since 2m 2>/dev/null | grep "api.telegram" | wc -l' 2>/dev/null || echo "0")
+              'export PATH=$HOME/.local/bin:$PATH && openshell logs $(cat ~/.sandbox-name) --since 3m 2>/dev/null | grep "api.telegram" | wc -l' 2>/dev/null || echo "0")
 
-          echo "Telegram requests in last 2 min: $TELEGRAM_COUNT"
+          echo "Telegram requests in last 3 min: $TELEGRAM_COUNT"
           [ "$TELEGRAM_COUNT" -gt "0" ] && echo "✅ Bridge service polling!" || echo "⚠️ Bridge may still be starting"
 
       - name: Deploy summary

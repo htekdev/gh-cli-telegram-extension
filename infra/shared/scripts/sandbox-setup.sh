@@ -46,8 +46,15 @@ echo ">>> Authenticating gh CLI..."
 echo "$GH_TOKEN" | gh auth login --with-token 2>&1 || echo "  gh auth skipped"
 
 # ── Read git deployment info ──────────────────────────────────────────────────
-GIT_REF=$(cat /sandbox/secrets/git-ref 2>/dev/null || echo "main")
-GIT_REPO=$(cat /sandbox/secrets/git-repo 2>/dev/null || echo "https://github.com/htekdev/gh-cli-telegram-extension.git")
+# OpenShell upload may nest files — try multiple paths
+GIT_REF="main"
+for p in /sandbox/secrets/git-ref /sandbox/secrets/git-ref/git-ref; do
+  if [ -f "$p" ]; then GIT_REF=$(cat "$p"); break; fi
+done
+GIT_REPO="https://github.com/htekdev/gh-cli-telegram-extension.git"
+for p in /sandbox/secrets/git-repo /sandbox/secrets/git-repo/git-repo; do
+  if [ -f "$p" ]; then GIT_REPO=$(cat "$p"); break; fi
+done
 REPO_DIR=~/copilot-telegram-bridge
 
 # ── Clone repo ───────────────────────────────────────────────────────────────
