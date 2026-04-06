@@ -12,6 +12,20 @@ import { resolve } from "node:path";
 import { joinSession } from "@github/copilot-sdk/extension";
 
 // ---------------------------------------------------------------------------
+// Read CRON_ENABLED from .env if not in environment
+// ---------------------------------------------------------------------------
+const ENV_FILE = resolve(process.cwd(), ".env");
+if (!process.env.CRON_ENABLED && existsSync(ENV_FILE)) {
+  const envContent = readFileSync(ENV_FILE, "utf-8");
+  for (const line of envContent.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("CRON_ENABLED=")) {
+      process.env.CRON_ENABLED = trimmed.slice("CRON_ENABLED=".length).trim();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Cron parser — supports 5-field expressions (min hour dom month dow)
 // Fields: *, N, N-M (range), N,M,O (list), */N (step), N-M/S (range+step)
 // ---------------------------------------------------------------------------
@@ -91,11 +105,12 @@ function nowInTimezone(tz) {
 // Config loading
 // ---------------------------------------------------------------------------
 const CRON_FILE = resolve(process.cwd(), "cron.json");
+const CRON_ENABLED = process.env.CRON_ENABLED === "true" || process.env.CRON_ENABLED === "1";
 let config = { timezone: "UTC", jobs: [] };
 let parsedJobs = [];
 
 function loadConfig() {
-  if (!existsSync(CRON_FILE)) return;
+  if (!CRON_ENABLED || !existsSync(CRON_FILE)) return;
 
   try {
     const raw = readFileSync(CRON_FILE, "utf-8");
@@ -175,6 +190,14 @@ async function checkSchedule(session) {
 const session = await joinSession({
   hooks: {
     onSessionStart: async () => {
+      if (!CRON_ENABLED) {
+        return {
+          additionalContext:
+            "[cron-scheduler] Cron is DISABLED (set CRON_ENABLED=true to activate). " +
+            "Jobs in cron.json will not run.",
+        };
+      }
+
       loadConfig();
       const enabledCount = parsedJobs.length;
       const totalCount = config.jobs.length;
@@ -182,8 +205,7 @@ const session = await joinSession({
       if (totalCount === 0) {
         return {
           additionalContext:
-            "[cron-scheduler] No cron.json found or no jobs configured. " +
-            "Create cron.json in the repo root to schedule tasks.",
+            "[cron-scheduler] Cron is enabled but no cron.json found or no jobs configured.",
         };
       }
 
@@ -256,7 +278,11 @@ const session = await joinSession({
 });
 
 // Start the scheduler loop
-if (parsedJobs.length > 0) {
+if (!CRON_ENABLED) {
+  await session.log(
+    "⏰ Cron scheduler: disabled (set CRON_ENABLED=true to activate)"
+  );
+} else if (parsedJobs.length > 0) {
   await session.log(
     `⏰ Cron scheduler active: ${parsedJobs.length} job(s) loaded`
   );
@@ -273,6 +299,6 @@ if (parsedJobs.length > 0) {
   checkSchedule(session).catch(() => {});
 } else {
   await session.log(
-    "⏰ Cron scheduler: no jobs configured (create cron.json to add scheduled tasks)"
+    "⏰ Cron scheduler: enabled but no jobs configured (create cron.json)"
   );
 }

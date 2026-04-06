@@ -61,6 +61,7 @@ echo ">>> Creating .env..."
 cat > ~/gh-cli-telegram-extension/.env << DOTENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID=7729308746
+CRON_ENABLED=true
 DOTENVEOF
 chmod 600 ~/gh-cli-telegram-extension/.env
 echo "  .env created"
