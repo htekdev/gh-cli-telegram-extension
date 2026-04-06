@@ -268,9 +268,70 @@ async function pollLoop(session) {
 
         // Non-text messages — notify user
         if (msg.photo || msg.document || msg.video || msg.voice || msg.sticker) {
+          // Handle photos — download and forward as vision input
+          if (msg.photo) {
+            const caption = msg.caption || "What do you see in this image?";
+            const preview =
+              caption.length > 80 ? caption.slice(0, 80) + "…" : caption;
+            await session.log(`📷 [Telegram] ${from}: ${preview}`);
+
+            startTypingIndicator(chatId);
+
+            setTimeout(async () => {
+              try {
+                // Get the largest photo (last in array)
+                const photo = msg.photo[msg.photo.length - 1];
+                const fileInfo = await telegramApi("getFile", {
+                  file_id: photo.file_id,
+                });
+                const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_TOKEN}/${fileInfo.file_path}`;
+
+                // Download the image
+                const imgRes = await fetch(fileUrl);
+                const imgBuffer = await imgRes.arrayBuffer();
+                const base64Data = Buffer.from(imgBuffer).toString("base64");
+
+                // Determine mime type from file path
+                const ext = fileInfo.file_path.split(".").pop().toLowerCase();
+                const mimeMap = {
+                  jpg: "image/jpeg",
+                  jpeg: "image/jpeg",
+                  png: "image/png",
+                  gif: "image/gif",
+                  webp: "image/webp",
+                  bmp: "image/bmp",
+                };
+                const mimeType = mimeMap[ext] || "image/jpeg";
+
+                await session.send({
+                  prompt: `[Telegram from ${from}]: ${caption}`,
+                  mode: "immediate",
+                  attachments: [
+                    {
+                      type: "blob",
+                      data: base64Data,
+                      mimeType,
+                      displayName: fileInfo.file_path.split("/").pop(),
+                    },
+                  ],
+                });
+              } catch (err) {
+                session.log(
+                  `⚠️ Failed to process image: ${err.message}`,
+                  { level: "warning" }
+                );
+                await sendTelegramMessage(
+                  chatId,
+                  "⚠️ Failed to process that image. Try again or send as text."
+                );
+              }
+            }, 0);
+            continue;
+          }
+
           await sendTelegramMessage(
             chatId,
-            "📎 Only text messages are supported right now. Please send text."
+            "📎 Only text and photo messages are supported right now."
           );
         }
       }
