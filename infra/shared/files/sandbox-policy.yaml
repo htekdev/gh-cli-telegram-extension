@@ -16,13 +16,11 @@ filesystem_policy:
     - /etc
     - /proc
     - /dev/urandom
-    - /dev/tty
   read_write:
     - /sandbox
     - /tmp
     - /dev/null
-    - /dev/ptmx
-    - /dev/pts
+    - /dev
 
 landlock:
   compatibility: best_effort
