@@ -149,7 +149,10 @@ cd infra/aws && terraform destroy
 
 ```
 .github/extensions/telegram-bridge/
-  extension.mjs              ← The entire bridge (single file, ~420 lines)
+  extension.mjs              ← Telegram bridge (single file, ~500 lines)
+.github/extensions/cron-scheduler/
+  extension.mjs              ← Scheduled tasks (pure JS cron, ~220 lines)
+cron.json                    ← Cron job definitions (timezone + schedule + prompt)
 infra/
   aws/                       ← AWS Terraform root module
     main.tf                  ← EC2 + security group + file provisioners
@@ -206,6 +209,42 @@ The sandbox enforces **default-deny** networking. Only explicitly allowlisted en
 - **Copilot needs directory trust before loading extensions** — pre-configure `trusted_folders` in `~/.copilot/config.json`
 - **`ssh -tt` keeps Copilot alive** — `nohup` kills the TTY which Copilot requires for interactive mode
 - **Copilot base image may be outdated** — install latest via `npm install -g @github/copilot` to user-writable prefix
+
+## Scheduled Tasks (Cron)
+
+The **cron-scheduler** extension runs scheduled prompts automatically. Define jobs in `cron.json`:
+
+```json
+{
+  "timezone": "America/Chicago",
+  "jobs": [
+    {
+      "id": "daily-standup",
+      "schedule": "0 9 * * 1-5",
+      "prompt": "Daily standup: check GitHub notifications, open PRs, assigned issues.",
+      "enabled": true
+    }
+  ]
+}
+```
+
+**Cron expression format:** `minute hour day-of-month month day-of-week`
+
+| Expression | Meaning |
+|-----------|---------|
+| `0 9 * * 1-5` | 9:00 AM weekdays |
+| `0 17 * * 5` | 5:00 PM Fridays |
+| `0 8 * * *` | 8:00 AM daily |
+| `*/30 * * * *` | Every 30 minutes |
+| `0 9,17 * * *` | 9 AM and 5 PM daily |
+
+Supports: `*`, ranges (`1-5`), lists (`1,3,5`), steps (`*/15`). Timezone-aware via `Intl.DateTimeFormat`.
+
+**Tools available to the agent:**
+- `cron_list_jobs` — list all configured jobs with status
+- `cron_next_run` — show when each enabled job fires next
+
+Responses flow through the Telegram bridge automatically — scheduled task results appear in your Telegram chat.
 
 ## Future: Multi-Session Bridge Service ([#1](https://github.com/htekdev/gh-cli-telegram-extension/issues/1))
 
