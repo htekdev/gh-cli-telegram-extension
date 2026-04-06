@@ -16,10 +16,13 @@ filesystem_policy:
     - /etc
     - /proc
     - /dev/urandom
+    - /dev/tty
   read_write:
     - /sandbox
     - /tmp
     - /dev/null
+    - /dev/ptmx
+    - /dev/pts
 
 landlock:
   compatibility: best_effort
@@ -45,6 +48,10 @@ network_policies:
       - path: /usr/bin/node
       - path: /usr/bin/git
       - path: /usr/bin/gh
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── Git over HTTPS (L7 credential injection) ──
   github_git:
@@ -66,7 +73,11 @@ network_policies:
       - path: /usr/bin/node
       - path: /usr/bin/git
       - path: /usr/bin/gh
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
       - path: /usr/lib/git-core/**
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── GitHub Copilot API (TCP passthrough — avoids 421 from HTTP/2 coalescing) ──
   github_copilot:
@@ -87,6 +98,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/gh
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── Telegram Bot API (TCP passthrough — avoids L7 issues with binary payloads) ──
   telegram_api:
@@ -97,7 +112,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
       - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── Exa AI API (L7 credential injection) ──
   exa_api:
@@ -118,6 +136,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── Perplexity API (L7 credential injection) ──
   perplexity_api:
@@ -135,6 +157,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── YouTube Data API v3 (L7 credential injection, read-only) ──
   youtube_api:
@@ -149,6 +175,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── Zernio API (L7 credential injection) ──
   zernio_api:
@@ -163,6 +193,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   zernio_legacy:
     name: zernio-legacy
@@ -176,6 +210,10 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── Microsoft Learn (public, no auth) ──
   mslearn_api:
@@ -185,6 +223,11 @@ network_policies:
         port: 443
     binaries:
       - path: /usr/bin/node
+      - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
 
   # ── npm registry (package installs) ──
   npm_registry:
@@ -195,4 +238,7 @@ network_policies:
     binaries:
       - path: /usr/bin/node
       - path: /usr/bin/npm
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
       - path: /usr/lib/node_modules/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
