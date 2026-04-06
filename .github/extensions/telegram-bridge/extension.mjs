@@ -67,7 +67,17 @@ async function sendTelegramMessage(chatId, text) {
     chunks.push(text.slice(i, i + TELEGRAM_MAX_LENGTH));
   }
   for (const chunk of chunks) {
-    await telegramApi("sendMessage", { chat_id: chatId, text: chunk });
+    try {
+      // Try Markdown first for rich formatting
+      await telegramApi("sendMessage", {
+        chat_id: chatId,
+        text: chunk,
+        parse_mode: "Markdown",
+      });
+    } catch {
+      // Fall back to plain text if Markdown parsing fails
+      await telegramApi("sendMessage", { chat_id: chatId, text: chunk });
+    }
     if (chunks.length > 1) await sleep(150);
   }
 }
