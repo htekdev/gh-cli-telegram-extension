@@ -76,19 +76,41 @@ export class SessionManager {
     return `tg-${chatId}-${Date.now()}`;
   }
 
-  async createSession(chatId: string): Promise<SessionInfo> {
+  async createSession(chatId: string, customSessionId?: string): Promise<SessionInfo> {
     const client = this.ensureClient();
-    const sessionId = this.generateSessionId(chatId);
+    const sessionId = customSessionId ?? this.generateSessionId(chatId);
 
-    const session = await client.createSession({
-      sessionId,
-      onPermissionRequest: approveAll,
-      infiniteSessions: {
-        enabled: true,
-        backgroundCompactionThreshold: 0.8,
-        bufferExhaustionThreshold: 0.95,
-      },
-    });
+    // Try to resume if this is a named session that might already exist
+    let session: CopilotSession;
+    if (customSessionId && this.sessionMap.has(sessionId)) {
+      session = this.sessionMap.get(sessionId)!;
+    } else if (customSessionId) {
+      try {
+        session = await client.resumeSession(sessionId, {
+          onPermissionRequest: approveAll,
+        });
+      } catch {
+        session = await client.createSession({
+          sessionId,
+          onPermissionRequest: approveAll,
+          infiniteSessions: {
+            enabled: true,
+            backgroundCompactionThreshold: 0.8,
+            bufferExhaustionThreshold: 0.95,
+          },
+        });
+      }
+    } else {
+      session = await client.createSession({
+        sessionId,
+        onPermissionRequest: approveAll,
+        infiniteSessions: {
+          enabled: true,
+          backgroundCompactionThreshold: 0.8,
+          bufferExhaustionThreshold: 0.95,
+        },
+      });
+    }
 
     this.sessionMap.set(sessionId, session);
 
@@ -156,6 +178,33 @@ export class SessionManager {
       throw err;
     } finally {
       releaseLock!();
+    }
+  }
+
+  async sendToCronSession(chatId: string, jobId: string, prompt: string): Promise<void> {
+    const cronSessionId = `cron-${jobId}`;
+
+    // Ensure the cron session exists (create or resume)
+    if (!this.sessionMap.has(cronSessionId)) {
+      await this.createSession(chatId, cronSessionId);
+      // Don't switch the user's active session — cron runs in background
+      const chatState = this.getChatState(chatId);
+      const userActive = Array.from(chatState.sessions.values())
+        .find(s => !s.sessionId.startsWith("cron-"));
+      if (userActive) {
+        chatState.activeSessionId = userActive.sessionId;
+      }
+    }
+
+    const session = this.sessionMap.get(cronSessionId);
+    if (!session) throw new Error(`No cron session for ${jobId}`);
+
+    this.startTyping(chatId);
+    try {
+      await session.send({ prompt, mode: "enqueue" });
+    } catch (err) {
+      this.stopTyping(chatId);
+      throw err;
     }
   }
 

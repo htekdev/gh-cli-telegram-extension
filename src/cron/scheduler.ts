@@ -115,8 +115,9 @@ export class CronScheduler {
       console.log(`[cron] ⏰ Running: ${job.id} (${job.schedule})`);
 
       try {
-        await this.sessionManager.sendMessage(
+        await this.sessionManager.sendToCronSession(
           this.chatId,
+          job.id,
           `[Scheduled Task: ${job.id}] ${job.prompt}`,
         );
       } catch (err) {

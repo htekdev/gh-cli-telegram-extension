@@ -116,7 +116,8 @@ export class CommandHandler {
     const lines = sessions.map((s, i) => {
       const marker = s.sessionId === activeId ? " ◀ active" : "";
       const age = formatAge(Date.now() - s.createdAt.getTime());
-      return `${i + 1}. ${s.sessionId} (${age})${marker}`;
+      const icon = s.sessionId.startsWith("cron-") ? "⏰" : "💬";
+      return `${i + 1}. ${icon} ${s.sessionId} (${age})${marker}`;
     });
 
     await this.telegram.sendMessage(
