@@ -34,10 +34,10 @@ describe("loadConfig", () => {
     expect(config.telegramChatId).toBe("12345");
   });
 
-  it("throws when TELEGRAM_BOT_TOKEN is missing", () => {
+  it("throws when no channel tokens are set", () => {
     writeFileSync(join(testDir, ".env"), "CRON_ENABLED=true\n");
 
-    expect(() => loadConfig(testDir)).toThrow();
+    expect(() => loadConfig(testDir)).toThrow("At least one channel");
   });
 
   it("uses env vars over .env file", () => {

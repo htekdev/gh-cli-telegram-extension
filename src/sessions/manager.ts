@@ -1,6 +1,6 @@
 import { CopilotClient, approveAll } from "@github/copilot-sdk";
 import type { Config } from "../config.js";
-import type { TelegramApi } from "../telegram/api.js";
+import type { MessagingChannel } from "../channels/types.js";
 import type { SessionInfo, ChatState } from "./types.js";
 
 const CROSS_SESSION_CONTEXT =
@@ -17,13 +17,13 @@ export class SessionManager {
   private readonly chats = new Map<string, ChatState>();
   private readonly sessionMap = new Map<string, CopilotSession>();
   private readonly config: Config;
-  private readonly telegram: TelegramApi;
+  private readonly channel: MessagingChannel;
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
   private sendLocks = new Map<string, Promise<void>>();
 
-  constructor(config: Config, telegram: TelegramApi) {
+  constructor(config: Config, channel: MessagingChannel) {
     this.config = config;
-    this.telegram = telegram;
+    this.channel = channel;
   }
 
   async start(): Promise<void> {
@@ -135,7 +135,7 @@ export class SessionManager {
       const content = event.data.content;
       if (!content || content.trim().length === 0) return;
       this.stopTyping(chatId);
-      this.telegram.sendMessage(chatId, content).catch((err) => {
+      this.channel.sendMessage(chatId, content).catch((err) => {
         console.warn(`[session-manager] Failed to forward to Telegram:`, err);
       });
     });
@@ -249,7 +249,7 @@ export class SessionManager {
         const content = event.data.content;
         if (!content || content.trim().length === 0) return;
         this.stopTyping(chatId);
-        this.telegram.sendMessage(chatId, content).catch((err) => {
+        this.channel.sendMessage(chatId, content).catch((err) => {
           console.warn(`[session-manager] Failed to forward to Telegram:`, err);
         });
       });
@@ -308,8 +308,8 @@ export class SessionManager {
 
   private startTyping(chatId: string): void {
     this.stopTyping(chatId);
-    this.telegram.sendTypingAction(chatId);
-    const interval = setInterval(() => this.telegram.sendTypingAction(chatId), 4000);
+    this.channel.sendTypingAction(chatId);
+    const interval = setInterval(() => this.channel.sendTypingAction(chatId), 4000);
     this.typingIntervals.set(chatId, interval);
   }
 

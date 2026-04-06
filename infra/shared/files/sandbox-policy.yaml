@@ -240,3 +240,25 @@ network_policies:
       - path: /usr/bin/sh
       - path: /usr/lib/node_modules/**
       - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**
+
+  # ── Slack API (Socket Mode WebSocket + Web API) ──
+  slack_api:
+    name: slack-api
+    endpoints:
+      - host: wss-primary.slack.com
+        port: 443
+      - host: wss-backup.slack.com
+        port: 443
+      - host: slack.com
+        port: 443
+      - host: api.slack.com
+        port: 443
+      - host: files.slack.com
+        port: 443
+    binaries:
+      - path: /usr/bin/node
+      - path: /usr/bin/curl
+      - path: /usr/bin/bash
+      - path: /usr/bin/sh
+      - path: /usr/lib/node_modules/@github/copilot/**
+      - path: /sandbox/.npm-global/lib/node_modules/@github/copilot/**

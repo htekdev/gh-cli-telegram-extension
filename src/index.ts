@@ -1,58 +1,65 @@
 import { loadConfig } from "./config.js";
-import { TelegramApi } from "./telegram/api.js";
-import { SessionManager } from "./sessions/manager.js";
-import { CommandHandler } from "./telegram/commands.js";
-import { MessageRouter } from "./telegram/router.js";
-import { TelegramPoller } from "./telegram/poller.js";
+import { TelegramAdapter } from "./telegram/adapter.js";
+import { SlackAdapter } from "./slack/adapter.js";
 import { CronScheduler } from "./cron/scheduler.js";
+import type { MessagingChannel } from "./channels/types.js";
+
+interface ChannelWithManager {
+  channel: MessagingChannel;
+  sessionManager: { stop(): Promise<void> };
+}
 
 async function main(): Promise<void> {
-  console.log("🤖 Copilot Telegram Bridge Service starting...");
+  console.log("🤖 Copilot Bridge Service starting...");
 
-  // 1. Load configuration
   const config = loadConfig();
   console.log("[config] Configuration loaded");
 
-  // 2. Initialize Telegram API
-  const telegram = new TelegramApi(config.telegramBotToken);
+  const channels: ChannelWithManager[] = [];
 
-  // 3. Start session manager (CopilotClient)
-  const sessionManager = new SessionManager(config, telegram);
-  await sessionManager.start();
+  // Start Telegram if configured
+  if (config.telegramBotToken) {
+    console.log("[telegram] Telegram channel enabled");
+    const telegram = new TelegramAdapter(config);
+    channels.push({ channel: telegram, sessionManager: telegram.sessionManager });
+  }
 
-  // 4. Set up Telegram command handler and message router
-  const commands = new CommandHandler(sessionManager, telegram);
-  const router = new MessageRouter(sessionManager, telegram);
+  // Start Slack if configured
+  if (config.slackBotToken && config.slackAppToken) {
+    console.log("[slack] Slack channel enabled");
+    const slack = new SlackAdapter(config);
+    channels.push({ channel: slack, sessionManager: slack.sessionManager });
+  }
 
-  // 5. Start Telegram poller
-  const poller = new TelegramPoller({
-    telegram,
-    commands,
-    router,
-    chatId: config.telegramChatId,
-  });
+  if (channels.length === 0) {
+    console.error("❌ No channels configured. Set TELEGRAM_BOT_TOKEN and/or SLACK_BOT_TOKEN + SLACK_APP_TOKEN.");
+    process.exit(1);
+  }
 
-  // 6. Start cron scheduler
+  // Start cron scheduler (targets first channel's session manager)
   let cronScheduler: CronScheduler | null = null;
   if (config.cronEnabled) {
-    cronScheduler = new CronScheduler(sessionManager, config.telegramChatId);
+    const primaryManager = channels[0].sessionManager as import("./sessions/manager.js").SessionManager;
+    const cronChatId = config.telegramChatId || config.slackChannelId;
+    cronScheduler = new CronScheduler(primaryManager, cronChatId);
     cronScheduler.start();
   } else {
     console.log("[cron] ⏰ Cron scheduler disabled (set CRON_ENABLED=true to activate)");
   }
 
-  // 7. Graceful shutdown
+  // Graceful shutdown
   const shutdown = async (signal: string) => {
     console.log(`\n[bridge] Received ${signal}, shutting down...`);
 
-    poller.stop();
-    cronScheduler?.stop();
-
-    try {
-      await sessionManager.stop();
-    } catch (err) {
-      console.error("[bridge] Error during shutdown:", err);
+    for (const { channel, sessionManager } of channels) {
+      channel.stop();
+      try {
+        await sessionManager.stop();
+      } catch (err) {
+        console.error(`[bridge] Error stopping ${channel.name}:`, err);
+      }
     }
+    cronScheduler?.stop();
 
     console.log("[bridge] Shutdown complete");
     process.exit(0);
@@ -61,11 +68,22 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => shutdown("SIGINT"));
   process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-  // Start polling (blocks until stopped)
-  await poller.start();
+  // Start all channels (Telegram poller blocks, Slack Socket Mode runs async)
+  const startPromises = channels.map((c) => c.channel.start());
+
+  // If only Slack (no blocking poller), keep process alive
+  if (!config.telegramBotToken && config.slackBotToken) {
+    await Promise.all(startPromises);
+    console.log("[bridge] All channels started. Waiting for events...");
+    // Keep alive
+    await new Promise(() => {});
+  } else {
+    await Promise.all(startPromises);
+  }
 }
 
 main().catch((err) => {
   console.error("❌ Bridge service crashed:", err);
   process.exit(1);
 });
+

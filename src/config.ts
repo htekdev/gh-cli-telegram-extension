@@ -3,8 +3,11 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 const configSchema = z.object({
-  telegramBotToken: z.string().min(1, "TELEGRAM_BOT_TOKEN is required"),
+  telegramBotToken: z.string().optional(),
   telegramChatId: z.string().optional(),
+  slackBotToken: z.string().optional(),
+  slackAppToken: z.string().optional(),
+  slackChannelId: z.string().optional(),
   cliUrl: z.string().optional(),
   cliPort: z.coerce.number().int().positive().optional(),
   cronEnabled: z.boolean().default(false),
@@ -46,8 +49,11 @@ export function loadConfig(cwd: string = process.cwd()): Config {
   const envFile = parseEnvFile(envFilePath);
 
   const raw = {
-    telegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", envFile) ?? "",
+    telegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", envFile),
     telegramChatId: getEnv("TELEGRAM_CHAT_ID", envFile),
+    slackBotToken: getEnv("SLACK_BOT_TOKEN", envFile),
+    slackAppToken: getEnv("SLACK_APP_TOKEN", envFile),
+    slackChannelId: getEnv("SLACK_CHANNEL_ID", envFile),
     cliUrl: getEnv("CLI_URL", envFile),
     cliPort: getEnv("CLI_PORT", envFile),
     cronEnabled:
@@ -56,5 +62,12 @@ export function loadConfig(cwd: string = process.cwd()): Config {
     logLevel: getEnv("LOG_LEVEL", envFile) ?? "info",
   };
 
-  return configSchema.parse(raw);
+  const config = configSchema.parse(raw);
+
+  // At least one channel must be configured
+  if (!config.telegramBotToken && !config.slackBotToken) {
+    throw new Error("At least one channel must be configured: set TELEGRAM_BOT_TOKEN and/or SLACK_BOT_TOKEN + SLACK_APP_TOKEN");
+  }
+
+  return config;
 }

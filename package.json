@@ -14,13 +14,15 @@
   },
   "dependencies": {
     "@github/copilot-sdk": "^0.2.1",
+    "@slack/socket-mode": "^2.0.6",
+    "@slack/web-api": "^7.15.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@vitest/coverage-v8": "^3.0.0"
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=22.0.0"
