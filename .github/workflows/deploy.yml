@@ -88,6 +88,13 @@ jobs:
         working-directory: infra/aws
         run: terraform init
 
+      - name: Download previous state
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state-${{ steps.env.outputs.env }}
+          path: infra/aws/
+        continue-on-error: true
+
       - name: Destroy existing ${{ steps.env.outputs.env }}
         working-directory: infra/aws
         run: terraform destroy -auto-approve 2>&1 || echo "No existing infrastructure"
