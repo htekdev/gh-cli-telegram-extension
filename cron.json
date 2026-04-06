@@ -5,25 +5,29 @@
       "id": "daily-standup",
       "schedule": "0 9 * * 1-5",
       "prompt": "Daily standup: check my GitHub notifications, list any open PRs that need attention, and any issues assigned to me across htekdev repos. Keep it brief.",
-      "enabled": false
+      "enabled": false,
+      "channel": "telegram"
     },
     {
       "id": "weekly-pr-summary",
       "schedule": "0 17 * * 5",
       "prompt": "Weekly PR summary: list all PRs merged this week across htekdev repos with a one-line description of each. Include counts by repo.",
-      "enabled": false
+      "enabled": false,
+      "channel": "all"
     },
     {
       "id": "morning-news",
       "schedule": "0 8 * * 1-5",
       "prompt": "Give me a quick summary of the top AI and developer tools news from the last 24 hours. Focus on GitHub Copilot, OpenShell, and AI agent developments.",
-      "enabled": false
+      "enabled": false,
+      "channel": "slack"
     },
     {
       "id": "htek-dev-site-pr-review",
       "schedule": "0 9 * * *",
       "prompt": "PR review for htekdev/htek-dev-site: 1) List all open PRs in the htekdev/htek-dev-site repo. If there are none, report that and stop. 2) For each open PR, fetch the diff and files changed. 3) Review each PR twice — first using the claude-opus-4.6 model (task agent), then using the gpt-5.3-codex model (task agent) — and collect both reviews. 4) Summarize both reviews per PR: note any bugs, risks, or blocking issues flagged by either model. 5) If both reviews are positive (no blocking issues), merge the PR using a merge commit. 6) Send a final Telegram summary: list each PR, both review verdicts, and whether it was merged or left open (with reason).",
-      "enabled": true
+      "enabled": true,
+      "channel": "telegram"
     }
   ]
 }

@@ -9,6 +9,8 @@ interface CronJob {
   schedule: string;
   prompt: string;
   enabled?: boolean;
+  channel?: "telegram" | "slack" | "all";
+  chatId?: string;
 }
 
 interface CronConfig {
@@ -20,22 +22,25 @@ interface ParsedJob extends CronJob {
   parsed: ParsedCron;
 }
 
+interface ChannelTarget {
+  name: string;
+  sessionManager: SessionManager;
+  defaultChatId: string | undefined;
+}
+
 export class CronScheduler {
   private readonly cronFile: string;
-  private readonly sessionManager: SessionManager;
-  private readonly chatId: string | undefined;
+  private readonly channelTargets: Map<string, ChannelTarget>;
   private config: CronConfig = { timezone: "UTC", jobs: [] };
   private parsedJobs: ParsedJob[] = [];
   private lastFired = new Map<string, boolean>();
   private interval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
-    sessionManager: SessionManager,
-    chatId: string | undefined,
+    channelTargets: Map<string, ChannelTarget>,
     cwd: string = process.cwd(),
   ) {
-    this.sessionManager = sessionManager;
-    this.chatId = chatId;
+    this.channelTargets = channelTargets;
     this.cronFile = resolve(cwd, "cron.json");
   }
 
@@ -99,7 +104,7 @@ export class CronScheduler {
   }
 
   private async checkSchedule(): Promise<void> {
-    if (this.parsedJobs.length === 0 || !this.chatId) return;
+    if (this.parsedJobs.length === 0) return;
 
     const now = nowInTimezone(this.config.timezone);
     const minuteKey = this.getMinuteKey(now);
@@ -112,16 +117,27 @@ export class CronScheduler {
 
       this.lastFired.set(firedKey, true);
 
-      console.log(`[cron] ⏰ Running: ${job.id} (${job.schedule})`);
+      console.log(`[cron] ⏰ Running: ${job.id} (${job.schedule}) → ${job.channel || "all"}`);
 
-      try {
-        await this.sessionManager.sendToCronSession(
-          this.chatId,
-          job.id,
-          `[Scheduled Task: ${job.id}] ${job.prompt}`,
-        );
-      } catch (err) {
-        console.warn(`[cron] Failed to send "${job.id}":`, err);
+      // Determine which channels to target
+      const targets = this.getTargetsForJob(job);
+
+      for (const target of targets) {
+        const chatId = job.chatId || target.defaultChatId;
+        if (!chatId) {
+          console.warn(`[cron] No chatId for job "${job.id}" on channel "${target.name}", skipping`);
+          continue;
+        }
+
+        try {
+          await target.sessionManager.sendToCronSession(
+            chatId,
+            job.id,
+            `[Scheduled Task: ${job.id}] ${job.prompt}`,
+          );
+        } catch (err) {
+          console.warn(`[cron] Failed to send "${job.id}" to ${target.name}:`, err);
+        }
       }
     }
 
@@ -132,6 +148,17 @@ export class CronScheduler {
         this.lastFired.delete(entries[i]);
       }
     }
+  }
+
+  private getTargetsForJob(job: CronJob): ChannelTarget[] {
+    const channelPref = job.channel || "all";
+
+    if (channelPref === "all") {
+      return Array.from(this.channelTargets.values());
+    }
+
+    const target = this.channelTargets.get(channelPref);
+    return target ? [target] : [];
   }
 
   private getMinuteKey(date: Date): string {
@@ -146,7 +173,9 @@ export class CronScheduler {
 
     const lines = this.config.jobs.map((j) => {
       const status = j.enabled === false ? "disabled" : "enabled";
-      return `• ${j.id}: ${j.schedule} [${status}]\n  "${j.prompt}"`;
+      const ch = j.channel || "all";
+      const chatTarget = j.chatId ? ` → ${j.chatId}` : "";
+      return `• ${j.id}: ${j.schedule} [${status}] (${ch}${chatTarget})\n  "${j.prompt}"`;
     });
 
     return `Timezone: ${this.config.timezone}\n\n${lines.join("\n\n")}`;
