@@ -1,6 +1,7 @@
 import type { SessionManager } from "../sessions/manager.js";
 import type { TelegramApi, TelegramMessage } from "./api.js";
 
+/** Handles Telegram slash commands for session management. */
 export class CommandHandler {
   private readonly sessionManager: SessionManager;
   private readonly telegram: TelegramApi;
@@ -10,10 +11,12 @@ export class CommandHandler {
     this.telegram = telegram;
   }
 
+  /** Return true if the text is a slash command. */
   isCommand(text: string): boolean {
     return text.startsWith("/");
   }
 
+  /** Handle a Telegram message if it is a command. */
   async handle(msg: TelegramMessage): Promise<boolean> {
     const text = msg.text?.trim() ?? "";
     if (!this.isCommand(text)) return false;

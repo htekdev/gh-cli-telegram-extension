@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # reset-sandbox.sh — Runs on the HOST as ubuntu user.
-# Destroys existing sandbox, recreates providers and sandbox, restarts Copilot.
+# Destroys existing sandbox, recreates providers and sandbox, and restarts the Telegram bridge service.
 # Used when the EC2 instance already exists and only the sandbox needs refreshing.
 set -euo pipefail
 
@@ -66,7 +66,7 @@ for f in ~/setup-sandbox.sh ~/sandbox-setup.sh ~/sandbox-policy.yaml; do
   [ -f "$f" ] && sed -i 's/\r$//' "$f"
 done
 
-# ── Run sandbox setup (creates providers + sandbox + starts copilot) ─────────
+# ── Run sandbox setup (creates providers + sandbox + restarts bridge) ────────
 echo ">>> Running sandbox setup..."
 bash ~/setup-sandbox.sh
 

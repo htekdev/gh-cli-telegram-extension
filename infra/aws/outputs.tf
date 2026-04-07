@@ -28,22 +28,24 @@ output "post_deploy_instructions" {
   value       = <<-EOT
 
     ╔══════════════════════════════════════════════════════════════════╗
-    ║  DEPLOY COMPLETE                                               ║
-    ║                                                                ║
-    ║  Bootstrap + sandbox setup running (~10 min).                  ║
-    ║  Once done, Copilot CLI is ready inside the sandbox.           ║
-    ║                                                                ║
-    ║  To check progress:                                            ║
+    ║  DEPLOY COMPLETE                                                 ║
+    ║                                                                  ║
+    ║  Bootstrap + sandbox setup are running (~10 min).                ║
+    ║  Once done, the Telegram bridge service is running inside the    ║
+    ║  OpenShell sandbox as a standalone Node.js process.              ║
+    ║                                                                  ║
+    ║  To check progress:                                              ║
     ║    ssh -i ${var.key_name}.pem ubuntu@${aws_instance.main.public_ip}
-    ║    tail -f /var/log/bootstrap.log                              ║
-    ║                                                                ║
-    ║  To connect to sandbox:                                        ║
-    ║    export PATH=$HOME/.local/bin:$PATH                          ║
-    ║    openshell sandbox connect $(cat ~/.sandbox-name)            ║
-    ║                                                                ║
-    ║  To start Copilot CLI (inside sandbox):                        ║
-    ║    cd ~/gh-cli-telegram-extension                              ║
-    ║    copilot --yolo --autopilot                                  ║
+    ║    tail -f /var/log/bootstrap.log                                ║
+    ║                                                                  ║
+    ║  To connect to sandbox:                                          ║
+    ║    export PATH=$HOME/.local/bin:$PATH                            ║
+    ║    openshell sandbox connect $(cat ~/.sandbox-name)              ║
+    ║                                                                  ║
+    ║  The bridge is started automatically by setup-sandbox.sh.        ║
+    ║  For manual restart/debug inside the sandbox:                    ║
+    ║    cd ~/copilot-telegram-bridge                                  ║
+    ║    npm start                                                     ║
     ╚══════════════════════════════════════════════════════════════════╝
 
   EOT

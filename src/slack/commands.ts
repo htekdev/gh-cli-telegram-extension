@@ -2,6 +2,7 @@ import type { SlackClient } from "./client.js";
 import type { SlackThreadRouter } from "./thread-router.js";
 import type { SessionManager } from "../sessions/manager.js";
 
+/** Handles Slack command messages and slash commands. */
 export class SlackCommandHandler {
   private readonly slackClient: SlackClient;
   private readonly threadRouter: SlackThreadRouter;
@@ -17,6 +18,7 @@ export class SlackCommandHandler {
     this.sessionManager = sessionManager;
   }
 
+  /** Return true when the text matches a supported command keyword. */
   isCommand(text: string): boolean {
     const lower = text.trim().toLowerCase();
     return (
@@ -28,6 +30,7 @@ export class SlackCommandHandler {
     );
   }
 
+  /** Handle a command message in Slack. */
   async handle(
     channel: string,
     text: string,
@@ -56,6 +59,7 @@ export class SlackCommandHandler {
     }
   }
 
+  /** Handle a slash command payload and return a response string. */
   async handleSlashCommand(
     command: string,
     channel: string,

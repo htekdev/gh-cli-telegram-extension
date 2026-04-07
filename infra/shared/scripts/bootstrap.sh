@@ -3,7 +3,7 @@
 # Runs as root on first boot (Ubuntu 24.04). Variables injected by Terraform templatefile.
 #
 # Installs: Docker, Node.js 22, pnpm, GitHub CLI, OpenShell
-# Then creates sandbox with Copilot CLI + Telegram bridge
+# Then hands off to setup-sandbox.sh to create an OpenShell sandbox running the standalone Telegram bridge service
 set -euo pipefail
 
 # ── Deploy status sentinel ───────────────────────────────────────────────────
@@ -105,9 +105,9 @@ echo "  Credential files written"
 
 # ── Write raw secrets for sandbox upload ─────────────────────────────────────
 # Provider env vars in SSH sessions resolve to openshell:resolve:... strings,
-# not raw values. TELEGRAM_BOT_TOKEN needs to be written as a raw value into
-# the .env file for the bridge service to read. GIT_REF and GIT_REPO are also
-# included here since separate file uploads have path issues with OpenShell.
+# not raw values. TELEGRAM_BOT_TOKEN and Slack tokens must be written as raw
+# values so the bridge .env file can consume them. GIT_REF and GIT_REPO are
+# also included here to avoid additional uploads via OpenShell.
 echo ">>> Writing raw secrets..."
 cat > /home/ubuntu/raw-secrets.env << ENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
@@ -162,7 +162,7 @@ for f in /home/ubuntu/*.sh /home/ubuntu/*.yaml /home/ubuntu/*.env; do
   [ -f "$f" ] && sed -i 's/\r$//' "$f"
 done
 
-# ── Run sandbox setup ───────────────────────────────────────────────────────
+# ── Run sandbox setup (creates providers + sandbox + starts bridge service) ─
 echo ">>> Running sandbox setup..."
 su - ubuntu -c 'bash /home/ubuntu/setup-sandbox.sh'
 

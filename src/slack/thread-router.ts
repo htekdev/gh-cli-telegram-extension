@@ -1,6 +1,7 @@
 import type { SessionManager } from "../sessions/manager.js";
 import type { SlackClient } from "./client.js";
 
+/** Routes Slack thread messages to Copilot sessions. */
 export class SlackThreadRouter {
   private readonly sessionManager: SessionManager;
   private readonly slackClient: SlackClient;
@@ -22,11 +23,13 @@ export class SlackThreadRouter {
     return safeTs ? `slack-${channel}-${safeTs}` : `slack-${channel}-default`;
   }
 
+  /** Encode a channel/thread combination into a chatId. */
   getChatId(channel: string, threadTs?: string): string {
     // Encode channel + thread as chatId for session manager
     return threadTs ? `${channel}:${threadTs}` : `${channel}:default`;
   }
 
+  /** Route a Slack message into its thread session. */
   async routeMessage(
     channel: string,
     text: string,
@@ -49,6 +52,7 @@ export class SlackThreadRouter {
     await this.sessionManager.sendMessage(chatId, `[Slack from ${user}]: ${text}`);
   }
 
+  /** End the session associated with a Slack thread. */
   async endThreadSession(channel: string, threadTs?: string): Promise<string | null> {
     const chatId = this.getChatId(channel, threadTs);
     const sessionKey = this.getSessionKey(channel, threadTs);
@@ -60,6 +64,7 @@ export class SlackThreadRouter {
     return ended;
   }
 
+  /** List all sessions for threads within a channel. */
   listThreadSessions(channel: string): Array<{ sessionId: string; threadTs: string }> {
     const results: Array<{ sessionId: string; threadTs: string }> = [];
     for (const [key, sessionId] of this.threadSessions) {

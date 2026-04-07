@@ -28,6 +28,7 @@ interface ChannelTarget {
   defaultChatId: string | undefined;
 }
 
+/** Schedules cron jobs and dispatches prompts to channel sessions. */
 export class CronScheduler {
   private readonly cronFile: string;
   private readonly channelTargets: Map<string, ChannelTarget>;
@@ -44,6 +45,7 @@ export class CronScheduler {
     this.cronFile = resolve(cwd, "cron.json");
   }
 
+  /** Start watching the cron config and evaluating schedules. */
   start(): void {
     this.loadConfig();
 
@@ -69,9 +71,12 @@ export class CronScheduler {
     }, 60_000);
 
     // Check immediately
-    this.checkSchedule().catch(() => {});
+    this.checkSchedule().catch((err) => {
+      console.warn("[cron] Initial schedule check failed:", err);
+    });
   }
 
+  /** Stop the scheduler and file watcher. */
   stop(): void {
     if (this.interval) {
       clearInterval(this.interval);
@@ -94,9 +99,25 @@ export class CronScheduler {
       this.config.timezone = this.config.timezone || "UTC";
       this.config.jobs = this.config.jobs || [];
 
-      this.parsedJobs = this.config.jobs
-        .filter((j) => j.enabled !== false)
-        .map((j) => ({ ...j, parsed: parseCron(j.schedule) }));
+      // Validate timezone early
+      try {
+        nowInTimezone(this.config.timezone);
+      } catch {
+        console.error(`[cron] Invalid timezone "${this.config.timezone}" in cron.json — disabling all jobs`);
+        this.parsedJobs = [];
+        return;
+      }
+
+      // Parse each job independently so one bad schedule doesn't disable all jobs
+      this.parsedJobs = [];
+      for (const job of this.config.jobs) {
+        if (job.enabled === false) continue;
+        try {
+          this.parsedJobs.push({ ...job, parsed: parseCron(job.schedule) });
+        } catch (parseErr) {
+          console.warn(`[cron] Skipping job "${job.id}" — invalid schedule "${job.schedule}":`, parseErr);
+        }
+      }
     } catch (err) {
       console.warn("[cron] Failed to load config:", err);
       this.parsedJobs = [];
@@ -165,6 +186,7 @@ export class CronScheduler {
     return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}-${date.getHours()}-${date.getMinutes()}`;
   }
 
+  /** Return a formatted list of configured jobs. */
   listJobs(): string {
     this.loadConfig();
     if (this.config.jobs.length === 0) {
@@ -181,6 +203,7 @@ export class CronScheduler {
     return `Timezone: ${this.config.timezone}\n\n${lines.join("\n\n")}`;
   }
 
+  /** Return formatted next-run times for each enabled job. */
   nextRuns(): string {
     this.loadConfig();
     if (this.parsedJobs.length === 0) return "No enabled cron jobs.";

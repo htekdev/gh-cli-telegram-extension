@@ -3,9 +3,10 @@
 # Configures git, clones repo, builds service, generates MCP config.
 set -euo pipefail
 #
-# ALL credentials are injected as env vars by OpenShell providers:
-#   GH_TOKEN, COPILOT_GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
-#   EXA_API_KEY, PERPLEXITY_API_KEY, YOUTUBE_API_KEY, ZERNIO_API_KEY
+# Credentials and deploy metadata are injected as env vars via OpenShell
+# providers and raw-secrets.env (loaded below), including GH_TOKEN,
+# COPILOT_GITHUB_TOKEN, TELEGRAM_BOT_TOKEN, SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
+# EXA_API_KEY, PERPLEXITY_API_KEY, YOUTUBE_API_KEY, ZERNIO_API_KEY, GIT_REF, GIT_REPO
 
 echo "=== Sandbox internal setup started ==="
 
@@ -22,7 +23,7 @@ if [ -n "$SECRETS_PATH" ]; then
   set +a
   echo "  Raw secrets loaded from $SECRETS_PATH"
 else
-  echo "  WARNING: raw secrets not found — TELEGRAM_BOT_TOKEN may be a resolver string"
+  echo "  WARNING: raw secrets not found — tokens such as TELEGRAM_BOT_TOKEN and Slack tokens may be resolver strings; GIT_REF/GIT_REPO will fall back to defaults"
 fi
 
 # ── Configure git ────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ npm install 2>&1
 npm run build 2>&1
 echo "  Build complete"
 
-# ── Create .env for bridge service ────────────────────────────────────────────
+# ── Create .env for bridge service (Telegram + Slack, BRIDGE_MODE=standalone) ─
 echo ">>> Creating .env..."
 cat > "$REPO_DIR/.env" << DOTENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
@@ -86,8 +87,8 @@ chmod 600 "$REPO_DIR/.env"
 echo "  .env created"
 
 # ── Pre-trust the repo directory ──────────────────────────────────────────────
-# Copilot prompts "do you trust this directory?" on first launch.
-# --yolo handles tool permissions but NOT directory trust. Merge into existing config.
+# Copilot tooling prompts "do you trust this directory?" on first use.
+# Pre-populate config so Copilot CLI/agents can run inside the sandbox non-interactively.
 echo ">>> Pre-trusting repo directory..."
 mkdir -p ~/.copilot
 if [ -f ~/.copilot/config.json ]; then
@@ -107,7 +108,7 @@ fi
 echo "  Directory pre-trusted"
 
 # ── Generate MCP config ─────────────────────────────────────────────────────
-# All env vars are injected by OpenShell providers at runtime.
+# All secrets are injected as env vars via providers/raw-secrets at runtime.
 echo ">>> Generating MCP config..."
 mkdir -p ~/.copilot
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # setup-sandbox.sh — Runs on the HOST as ubuntu user.
-# Creates OpenShell providers, sandbox, and runs internal setup.
+# Called from bootstrap.sh. Creates OpenShell providers, provisions a sandbox,
+# uploads raw secrets, runs sandbox-setup.sh inside it, then starts the bridge.
 set -euo pipefail
 
 export PATH="$HOME/.local/bin:$PATH"
@@ -84,7 +85,9 @@ echo ">>> Sandbox: $SANDBOX_NAME"
 echo "$SANDBOX_NAME" > "$HOME/.sandbox-name"
 
 # ── Upload raw secrets into sandbox ───────────────────────────────────────────
-# Contains TELEGRAM_BOT_TOKEN, GIT_REF, and GIT_REPO
+# Contains TELEGRAM_BOT_TOKEN and, on initial bootstrap, Slack tokens and
+# deployment metadata (GIT_REF/GIT_REPO). Resets currently rehydrate only
+# TELEGRAM_BOT_TOKEN; other values fall back to defaults.
 echo ">>> Uploading raw secrets into sandbox..."
 openshell sandbox upload "$SANDBOX_NAME" "$HOME/raw-secrets.env" /sandbox/secrets 2>&1
 echo "  Secrets uploaded"
@@ -116,10 +119,10 @@ BRIDGE_PID=$!
 echo "$BRIDGE_PID" > /home/ubuntu/.bridge-pid
 sleep 5
 if kill -0 "$BRIDGE_PID" 2>/dev/null; then
-  echo "  Bridge service started (host SSH PID: $BRIDGE_PID)"
+  echo "  Bridge launch SSH session is running (PID: $BRIDGE_PID)"
   echo "  Log: ~/bridge-service.log"
 else
-  echo "  WARNING: Bridge may not have started — check ~/bridge-service.log"
+  echo "  WARNING: Bridge SSH session may not have started — check ~/bridge-service.log"
 fi
 
 echo "=== Sandbox Setup completed at $(date -u) ==="

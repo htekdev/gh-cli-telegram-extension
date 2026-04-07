@@ -2,6 +2,7 @@ import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
 import { HttpsProxyAgent } from "https-proxy-agent";
 
+/** Slack Socket Mode + Web API wrapper used by the adapter. */
 export class SlackClient {
   private readonly socketMode: SocketModeClient;
   private readonly web: WebClient;
@@ -20,20 +21,24 @@ export class SlackClient {
     this.web = new WebClient(botToken, { agent });
   }
 
+  /** Return the underlying Socket Mode client. */
   getSocketMode(): SocketModeClient {
     return this.socketMode;
   }
 
+  /** Connect to Slack Socket Mode. */
   async connect(): Promise<void> {
     await this.socketMode.start();
     console.log("[slack] Socket Mode connected");
   }
 
+  /** Disconnect from Slack Socket Mode. */
   async disconnect(): Promise<void> {
     await this.socketMode.disconnect();
     console.log("[slack] Socket Mode disconnected");
   }
 
+  /** Post a message to Slack and return the timestamp if created. */
   async sendMessage(channel: string, text: string, threadTs?: string): Promise<string | undefined> {
     if (!text || text.trim().length === 0) return undefined;
 
@@ -46,6 +51,7 @@ export class SlackClient {
     return result.ts;
   }
 
+  /** Slack bots don't support typing indicators; this is a no-op. */
   async sendTypingAction(_channel: string): Promise<void> {
     // Slack doesn't have a typing indicator API for bots — no-op
   }

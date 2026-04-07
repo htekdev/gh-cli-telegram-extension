@@ -14,6 +14,7 @@ const configSchema = z.object({
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
+/** Runtime configuration derived from environment variables. */
 export type Config = z.infer<typeof configSchema>;
 
 function parseEnvFile(filePath: string): Record<string, string> {
@@ -44,6 +45,7 @@ function getEnv(key: string, envFile: Record<string, string>): string | undefine
   return process.env[key] || envFile[key] || undefined;
 }
 
+/** Load configuration from environment variables and optional .env file. */
 export function loadConfig(cwd: string = process.cwd()): Config {
   const envFilePath = resolve(cwd, ".env");
   const envFile = parseEnvFile(envFilePath);

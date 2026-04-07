@@ -1,8 +1,9 @@
 import type { TelegramApi, TelegramUpdate } from "./api.js";
-import { sleep_ms } from "./api.js";
+import { sleepMs } from "./api.js";
 import type { CommandHandler } from "./commands.js";
 import type { MessageRouter } from "./router.js";
 
+/** Constructor options for TelegramPoller. */
 export interface PollerOptions {
   telegram: TelegramApi;
   commands: CommandHandler;
@@ -10,6 +11,7 @@ export interface PollerOptions {
   chatId?: string;
 }
 
+/** Long-polling loop for Telegram updates. */
 export class TelegramPoller {
   private readonly telegram: TelegramApi;
   private readonly commands: CommandHandler;
@@ -26,12 +28,13 @@ export class TelegramPoller {
     this.chatId = opts.chatId;
   }
 
+  /** Start polling for Telegram updates. */
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
 
     // Brief delay for any previous instance's getUpdates to finish
-    await sleep_ms(2000);
+    await sleepMs(2000);
 
     // Skip old updates
     await this.skipOldUpdates();
@@ -58,11 +61,11 @@ export class TelegramPoller {
           const isConflict = data.description?.includes("Conflict");
           if (isConflict) {
             console.log("[poller] ⏳ Waiting for previous polling instance...");
-            await sleep_ms(3000);
+            await sleepMs(3000);
             continue;
           }
           console.warn(`[poller] ⚠️ Telegram API error: ${data.description}`);
-          await sleep_ms(5000);
+          await sleepMs(5000);
           continue;
         }
 
@@ -72,18 +75,20 @@ export class TelegramPoller {
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") break;
         console.warn("[poller] ⚠️ Polling error:", err);
-        await sleep_ms(3000);
+        await sleepMs(3000);
       }
     }
 
     console.log("[poller] Polling stopped");
   }
 
+  /** Stop the polling loop. */
   stop(): void {
     this.running = false;
     this.abortController?.abort();
   }
 
+  /** Report whether the poller is running. */
   isRunning(): boolean {
     return this.running;
   }
@@ -94,8 +99,8 @@ export class TelegramPoller {
       if (data.ok && data.result.length > 0) {
         this.pollOffset = data.result[data.result.length - 1].update_id + 1;
       }
-    } catch {
-      /* start from 0 */
+    } catch (err) {
+      console.warn("[poller] Could not skip old updates, starting from offset 0:", err);
     }
   }
 

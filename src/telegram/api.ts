@@ -1,5 +1,6 @@
 const TELEGRAM_MAX_LENGTH = 4096;
 
+/** Telegram user metadata returned by the Bot API. */
 export interface TelegramUser {
   id: number;
   is_bot: boolean;
@@ -7,11 +8,13 @@ export interface TelegramUser {
   username?: string;
 }
 
+/** Basic chat metadata from Telegram. */
 export interface TelegramChat {
   id: number;
   type: string;
 }
 
+/** Telegram photo metadata for a specific size. */
 export interface TelegramPhotoSize {
   file_id: string;
   file_unique_id: string;
@@ -20,6 +23,7 @@ export interface TelegramPhotoSize {
   file_size?: number;
 }
 
+/** Telegram message payload used by the bridge. */
 export interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
@@ -34,11 +38,13 @@ export interface TelegramMessage {
   sticker?: unknown;
 }
 
+/** Telegram update payload for long polling. */
 export interface TelegramUpdate {
   update_id: number;
   message?: TelegramMessage;
 }
 
+/** Telegram file metadata resolved from getFile. */
 export interface TelegramFile {
   file_id: string;
   file_unique_id: string;
@@ -46,6 +52,7 @@ export interface TelegramFile {
   file_path?: string;
 }
 
+/** Thin wrapper around the Telegram Bot API. */
 export class TelegramApi {
   private readonly apiBase: string;
   private readonly token: string;
@@ -55,21 +62,29 @@ export class TelegramApi {
     this.apiBase = `https://api.telegram.org/bot${token}`;
   }
 
+  /** Call a Telegram API method and return its result payload. */
   async call<T>(method: string, body: Record<string, unknown> = {}): Promise<T> {
     const res = await fetch(`${this.apiBase}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const data = (await res.json()) as { ok: boolean; result: T; description?: string };
-    if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
-    return data.result;
+    if (!res.ok) {
+      throw new Error(`Telegram API HTTP error: ${res.status} ${res.statusText} for ${method}`);
+    }
+    const data = (await res.json()) as { ok?: boolean; result?: T; description?: string };
+    if (!data || typeof data !== "object" || !data.ok) {
+      throw new Error(`Telegram API error: ${data?.description ?? "unknown error"}`);
+    }
+    return data.result as T;
   }
 
+  /** Fetch the bot user metadata. */
   async getMe(): Promise<TelegramUser> {
     return this.call<TelegramUser>("getMe");
   }
 
+  /** Long-poll for updates from Telegram. */
   async getUpdates(
     offset: number,
     timeout: number,
@@ -85,13 +100,22 @@ export class TelegramApi {
       }),
       signal,
     });
-    return (await res.json()) as {
-      ok: boolean;
-      result: TelegramUpdate[];
+    if (!res.ok) {
+      return { ok: false, result: [], description: `HTTP ${res.status} ${res.statusText}` };
+    }
+    const data = (await res.json()) as {
+      ok?: boolean;
+      result?: TelegramUpdate[];
       description?: string;
+    };
+    return {
+      ok: data?.ok === true,
+      result: Array.isArray(data?.result) ? data.result : [],
+      description: data?.description,
     };
   }
 
+  /** Send a message, chunking it when it exceeds Telegram length limits. */
   async sendMessage(chatId: string, text: string): Promise<void> {
     if (!text || text.trim().length === 0) return;
 
@@ -114,6 +138,7 @@ export class TelegramApi {
     }
   }
 
+  /** Send a typing indicator (best-effort). */
   async sendTypingAction(chatId: string): Promise<void> {
     try {
       await this.call("sendChatAction", { chat_id: chatId, action: "typing" });
@@ -122,10 +147,12 @@ export class TelegramApi {
     }
   }
 
+  /** Resolve a Telegram file by ID. */
   async getFile(fileId: string): Promise<TelegramFile> {
     return this.call<TelegramFile>("getFile", { file_id: fileId });
   }
 
+  /** Download a file from Telegram and infer its MIME type. */
   async downloadFile(filePath: string): Promise<{ data: Buffer; mimeType: string }> {
     const fileUrl = `https://api.telegram.org/file/bot${this.token}/${filePath}`;
     const res = await fetch(fileUrl);
@@ -147,6 +174,7 @@ export class TelegramApi {
     return { data: buffer, mimeType: mimeMap[ext] ?? "image/jpeg" };
   }
 
+  /** Send a photo by URL or local file path. */
   async sendPhoto(
     chatId: string,
     photo: string,
@@ -172,8 +200,11 @@ export class TelegramApi {
         method: "POST",
         body: formData,
       });
-      const data = (await res.json()) as { ok: boolean; description?: string };
-      if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
+      if (!res.ok) {
+        throw new Error(`Telegram API HTTP error: ${res.status} ${res.statusText} for sendPhoto`);
+      }
+      const data = (await res.json()) as { ok?: boolean; description?: string };
+      if (!data?.ok) throw new Error(`Telegram API error: ${data?.description ?? "unknown error"}`);
     }
   }
 }
@@ -182,6 +213,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function sleep_ms(ms: number): Promise<void> {
+/** Sleep for the provided duration in milliseconds. */
+export function sleepMs(ms: number): Promise<void> {
   return sleep(ms);
 }

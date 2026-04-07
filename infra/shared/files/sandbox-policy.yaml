@@ -1,5 +1,5 @@
-# OpenShell Policy: Copilot CLI Telegram Bridge
-# Sandbox runs Copilot CLI with Telegram bridge extension + MCP servers.
+# OpenShell Policy: Copilot Telegram Bridge Service
+# Sandbox runs the standalone Telegram bridge service (Node.js + Copilot SDK) plus MCP servers.
 #
 # Usage:
 #   openshell sandbox create --policy sandbox-policy.yaml --provider copilot \
