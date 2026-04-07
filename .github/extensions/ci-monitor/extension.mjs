@@ -482,7 +482,7 @@ const session = await joinSession({
           if (prNum) {
             log(`PR #${prNum} found — starting CI monitoring`);
             startMonitoring(cwd, (msg) => {
-              session.send({ prompt: msg }).catch((e) =>
+              session.send({ prompt: msg, mode: "immediate" }).catch((e) =>
                 console.error("[ci-monitor] send failed:", e.message)
               );
             });
@@ -503,7 +503,7 @@ const session = await joinSession({
         setTimeout(() => {
           log("Delayed monitoring start firing...");
           startMonitoring(cwd, (msg) => {
-            session.send({ prompt: msg }).catch((e) =>
+            session.send({ prompt: msg, mode: "immediate" }).catch((e) =>
               console.error("[ci-monitor] send failed:", e.message)
             );
           });
@@ -583,7 +583,7 @@ log("ci-monitor extension initialized");
   if (prNum) {
     log(`PR #${prNum} found on init — starting CI monitor`);
     startMonitoring(cwd, (msg) => {
-      session.send({ prompt: msg }).catch((e) =>
+      session.send({ prompt: msg, mode: "immediate" }).catch((e) =>
         console.error("[ci-monitor] send failed:", e.message)
       );
     }, true);
