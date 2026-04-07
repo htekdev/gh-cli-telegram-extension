@@ -1,298 +1,355 @@
-# 🤖 Telegram ↔ GitHub Copilot CLI Bridge
+# 🚀 GitHub Copilot CLI Extensibility: From Extension to Service
 
-**Who needs OpenClaw when you have GitHub Copilot CLI Extensions?**
+**What can you build with GitHub Copilot CLI's extensibility model?**
 
-[OpenClaw](https://github.com/openclaw/openclaw) is a fantastic project — a full personal AI assistant framework with a gateway daemon, 20+ channel integrations (WhatsApp, Telegram, Slack, Discord, Signal, iMessage, Teams, IRC, Matrix...), companion apps, voice wake words, a live canvas, multi-agent routing, onboarding wizards, and thousands of lines of infrastructure code.
+This repo demonstrates the full spectrum — from a single `.mjs` extension file to a production-ready multi-channel bridge service, all powered by the same underlying SDK at different scales.
 
-**This project does the same core thing in a single file — and deploys it securely to the cloud with one command.**
+## Three Levels of Extensibility
 
-One `.mjs` extension. ~420 lines. No gateway. No daemon. Deployed inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox with policy-enforced networking, L7 credential injection, and full IaC automation via Terraform. `terraform apply` → 10 minutes → a secure, sandboxed Copilot CLI agent on Telegram.
+### 🔧 **Extension Mode** — Single File, Zero Infrastructure
+Drop one `.mjs` file in `.github/extensions/`, Copilot loads it automatically. Perfect for local dev and simple automations.
 
-## What We Built
+### 🏗️ **Service Mode** — When You Outgrow One Session  
+Same SDK (`CopilotClient`), but now you manage N parallel sessions programmatically. Multi-channel support (Telegram + Slack), cron scheduling, session persistence.
 
-### Phase 1: The Extension
+### ☁️ **Cloud Mode** — Production-Ready Deployment
+Wrap your service in OpenShell + Terraform for secure, automated deployment. Commit-pinned releases, default-deny networking, credential injection.
 
-A Copilot CLI extension that bridges Telegram to your active session using long polling. The SDK gives you `session.send()` to inject prompts, `session.on("assistant.message")` to capture responses, and a full Node.js runtime. That's all you need.
+## The Bridge: Telegram + Slack ↔ Copilot
 
-### Phase 2: Safe OpenClaw (Current)
+This specific implementation connects chat platforms to GitHub Copilot CLI:
 
-Infrastructure as Code that deploys Copilot CLI inside an OpenShell sandbox on AWS, connected to Telegram — a secure, automated alternative to OpenClaw.
+**Extension Mode**: Single Telegram chat → One persistent Copilot session  
+**Service Mode**: Multi-session via `/new`, `/switch`, Slack threads as sessions, per-job cron scheduling  
+**Cloud Mode**: Deployed in OpenShell sandbox with L7 security policies
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│  AWS EC2 (Ubuntu 24.04, t3.medium)                           │
-│  Docker + OpenShell gateway                                   │
-│                                                               │
-│  ┌────────────────────────────────────────────────────────┐   │
-│  │  OpenShell Sandbox (policy-enforced)                   │   │
-│  │                                                        │   │
-│  │  Copilot CLI --yolo --autopilot --experimental         │   │
-│  │  Telegram Bridge Extension (this repo)                 │   │
-│  │                                                        │   │
-│  │  Providers (credentials injected at runtime):          │   │
-│  │    copilot  → GitHub Copilot API                       │   │
-│  │    github   → GitHub API + git                         │   │
-│  │    exa      → Exa AI search                            │   │
-│  │    perplexity → Perplexity AI research                 │   │
-│  │    youtube  → YouTube Data API                         │   │
-│  │    zernio   → Zernio social media                      │   │
-│  │                                                        │   │
-│  │  MCP Servers: exa, perplexity, youtube, mslearn        │   │
-│  │                                                        │   │
-│  │  Network Policy (default deny):                        │   │
-│  │  ✅ GitHub API (L7 credential injection)               │   │
-│  │  ✅ Copilot API (TCP passthrough)                      │   │
-│  │  ✅ Telegram Bot API                                   │   │
-│  │  ✅ Exa, Perplexity, YouTube, Zernio (L7)             │   │
-│  │  ✅ npm registry                                       │   │
-│  │  ❌ Everything else (blocked)                          │   │
-│  └────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Zero manual steps.** `terraform apply` handles everything:
-1. Provisions EC2 instance (Ubuntu 24.04)
-2. Installs Docker, Node.js 22, pnpm, gh CLI, OpenShell
-3. Creates 6 OpenShell providers for credential injection
-4. Creates sandbox with network policy
-5. Clones this repo inside sandbox
-6. Generates MCP config from injected env vars
-7. Pre-trusts the repo directory + enables experimental mode
-8. Starts Copilot CLI with `--yolo --autopilot --no-ask-user --experimental`
-9. Telegram bridge extension auto-loads and begins polling
-
-**~10 minutes from `terraform apply` to a live agent on Telegram.**
-
-## What It Does
+## Architecture Overview
 
 ```
-┌──────────────┐    long polling     ┌──────────────┐    session.send()    ┌──────────────┐
-│   Telegram   │ ◄─────────────────► │   Extension  │ ◄──────────────────► │  Copilot CLI │
-│  (your phone)│   getUpdates       │  (bridge)    │   assistant.message  │  (session)   │
-└──────────────┘   sendMessage       └──────────────┘                      └──────────────┘
+Extension Mode (.mjs)          Service Mode (TypeScript)         Cloud Mode (OpenShell)
+┌─────────────────┐           ┌────────────────────────────┐    ┌─────────────────────────┐
+│ .github/        │           │ Bridge Service             │    │ AWS EC2 + OpenShell     │
+│ extensions/     │           │ (Node.js/TypeScript)       │    │                         │
+│                 │           │                            │    │ ┌─────────────────────┐ │
+│ telegram-       │           │ ┌───────┐  ┌──────────┐    │    │ │    Sandbox          │ │
+│ bridge.mjs      │           │ │Telegram│  │  Slack   │    │    │ │                     │ │
+│                 │           │ │Poller │  │ Threads  │    │    │ │ ┌─────────────────┐ │ │
+│ (one session)   │           │ └───┬───┘  └────┬─────┘    │    │ │ │ Bridge Service  │ │ │
+└─────────────────┘           │     │           │          │    │ │ │                 │ │ │
+                              │     └─────┬─────┘          │    │ │ │ N Sessions      │ │ │
+┌─────────────────┐           │           ▼                │    │ │ │ Cron Jobs       │ │ │
+│ joinSession()   │           │    ┌─────────────────┐     │    │ │ └─────────────────┘ │ │
+│                 │           │    │ Session Manager │     │    │ │                     │ │
+│ Simple hook     │           │    │                 │     │    │ │ Default-deny        │ │
+│ Points:         │           │    │ S1  S2  S3      │     │    │ │ networking          │ │
+│                 │           │    │(active)         │     │    │ └─────────────────────┘ │
+│ • onMessage     │           │    └─────────────────┘     │    │                         │
+│ • onCron        │           │     CopilotClient SDK      │    │ Terraform managed       │
+│ • onPermission  │           └────────────────────────────┘    └─────────────────────────┘
+└─────────────────┘
 ```
-
-- **📱 → 💻**: Send a message on Telegram → it becomes a real user prompt in the Copilot CLI session
-- **💻 → 📱**: Copilot responds → the response is automatically forwarded to Telegram
-- **Full power**: The agent can read/write files, run commands, search code, create PRs, query GitHub — everything it can do locally, you can trigger from Telegram
 
 ## Quick Start
 
-### Local Mode (extension only)
+### Extension Mode (Local Dev, Single Session)
 
-1. Message [@BotFather](https://t.me/BotFather) on Telegram, create a bot, copy the token
-2. `cp .env.example .env` and paste your bot token
-3. Start `copilot --experimental` in this repo — extension loads automatically
-4. Send `/start` to your bot on Telegram
+1. Create `.github/extensions/telegram-bridge.mjs`:
 
-### Cloud Mode (OpenShell sandbox on AWS)
+```javascript
+import { joinSession, approveAll } from "@github/copilot-sdk/extension";
+import { TelegramApi } from "node-telegram-bot-api";
 
-#### Prerequisites
+const session = await joinSession({
+  onPermissionRequest: approveAll,
+  hooks: {
+    onSessionStart: async () => ({ 
+      additionalContext: "This session is bridged to Telegram" 
+    }),
+    onUserPromptSubmitted: async (input) => {
+      // Bridge Copilot responses back to Telegram
+      // Your message routing logic here
+    }
+  }
+});
+```
 
-- [Terraform](https://developer.hashicorp.com/terraform/install) >= 1.5
-- AWS CLI configured with EC2 permissions
-- Key pair named `gh-copilot-openclaw-key`
+2. Set `TELEGRAM_BOT_TOKEN` in environment
+3. Run: `copilot --experimental`
 
-#### Deploy
+### Service Mode (Multi-Session Production)
+
+```bash
+# 1. Clone and install
+git clone https://github.com/htekdev/gh-cli-telegram-extension.git
+cd gh-cli-telegram-extension
+npm install
+
+# 2. Configure
+cp .env.example .env
+# Edit .env: set TELEGRAM_BOT_TOKEN, SLACK_BOT_TOKEN
+
+# 3. Build and run  
+npm run build
+npm start
+```
+
+### Cloud Mode (OpenShell Deployment)
 
 ```bash
 cd infra/aws
 cp terraform.tfvars.example terraform.tfvars
-# Fill in your API keys (see terraform.tfvars.example for list)
+# Fill in: telegram_bot_token, slack_bot_token, github_token
 terraform init && terraform apply
 ```
 
-In ~10 minutes your agent is live on Telegram. No SSH needed. No manual steps.
+### Environment Variables
 
-#### SSH In (for debugging)
+| Variable | Extension | Service | Cloud | Description |
+|----------|-----------|---------|-------|-------------|
+| `TELEGRAM_BOT_TOKEN` | ✅ | ✅ | ✅ | Bot token from [@BotFather](https://t.me/BotFather) |
+| `SLACK_BOT_TOKEN` | — | ✅ | ✅ | Slack app bot token (`xoxb-...`) |
+| `TELEGRAM_CHAT_ID` | ✅ | ⭕ | ⭕ | Lock to specific chat ID (recommended for extension mode) |
+| `BRIDGE_MODE` | — | ⭕ | ⭕ | Set to `standalone` to disable extension auto-loading |
+| `CLI_URL` | — | ⭕ | ⭕ | Connect to existing headless CLI (`localhost:4321`) |
+| `CLI_PORT` | — | ⭕ | ⭕ | Port for CopilotClient server |
+| `CRON_ENABLED` | — | ⭕ | ⭕ | Enable cron scheduler (`true`/`false`, default: `false`) |
+| `LOG_LEVEL` | ⭕ | ⭕ | ⭕ | Log level (`debug`/`info`/`warn`/`error`) |
 
-```bash
-ssh -i gh-copilot-openclaw-key.pem ubuntu@$(cd infra/aws && terraform output -raw public_ip)
+✅ = Required, ⭕ = Optional, — = Not applicable
 
-# Connect to sandbox
-export PATH=$HOME/.local/bin:$PATH
-openshell sandbox connect $(cat ~/.sandbox-name)
+## Features by Mode
 
-# Check Copilot log
-tail -f ~/copilot-session.log
+### Extension Mode Features
+- Single persistent Copilot session
+- Basic Telegram message bridging  
+- Simple cron job support via hooks
+- Zero infrastructure requirements
+- Perfect for personal automation
 
-# Check extension polling
-openshell logs $(cat ~/.sandbox-name) --since 5m | grep telegram
-```
+### Service Mode Features  
+- **Multi-session management**: `/new`, `/switch N`, `/list`, `/end` commands
+- **Dual-channel support**: Telegram commands + Slack threads (each thread = session)
+- **Cron scheduling**: Per-job targeting (telegram/slack/all channels)
+- **Session persistence**: Survives restarts via CopilotClient SDK
+- **Dedicated cron sessions**: Background jobs with cross-session context hints
+- **Concurrent session support**: Both channels can run simultaneously
 
-#### Cost
+### Cloud Mode Features
+- **Commit-pinned deployments**: GITHUB_SHA flows through Terraform to sandbox
+- **OpenShell security**: Default-deny networking with L7 policies
+- **Credential injection**: Secrets delivered via OpenShell providers at runtime
+- **Infrastructure as code**: Full Terraform deployment automation
+- **Monitoring ready**: Structured logging and health checks
 
-| Running 24/7 | Stopped |
-|-------------|---------|
-| ~$30/mo (t3.medium) | ~$1.60/mo (EBS only) |
+## Command Reference
 
-#### Destroy
+### Telegram Commands
 
-```bash
-cd infra/aws && terraform destroy
-```
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/start` | Welcome message, creates first session | `/start` |
+| `/new` | Create a new parallel session | `/new` |
+| `/switch N` | Switch to session N (from `/list`) | `/switch 2` |
+| `/list` | List all sessions with index and age | `/list` |
+| `/end` | End current session | `/end` |
+| `/status` | Bridge and session status | `/status` |
+| `/help` | Command reference | `/help` |
 
-## OpenClaw vs. This Project
+### Slack Integration
 
-| | OpenClaw | This Project |
-|---|---------|-------------|
-| **Setup** | `npm install -g openclaw`, onboarding wizard, gateway daemon, systemd/launchd | `terraform apply` — one command, zero manual steps |
-| **Infrastructure** | Gateway server, WebSocket control plane, session model, media pipeline | OpenShell sandbox + Copilot CLI + one extension file |
-| **Security** | Manual configuration, API keys stored on disk | OpenShell policy-enforced networking, L7 credential injection, default-deny |
-| **Agent** | Custom Pi agent runtime | GitHub Copilot — the best coding agent available |
-| **Channels** | 20+ (WhatsApp, Telegram, Slack, Discord, Signal, etc.) | 1 (Telegram). Adding more = adding extension files |
-| **Tools** | Custom skill system | Full Copilot CLI ecosystem + MCP servers |
-| **Code** | Thousands of lines across gateway, channels, agent, CLI | ~420 lines (extension) + ~300 lines (IaC scripts) |
-| **Cloud deploy** | Manual VM setup, systemd services, interactive auth | `terraform apply` — fully automated |
-
-## File Structure
-
-```
-.github/extensions/telegram-bridge/
-  extension.mjs              ← Telegram bridge (single file, ~500 lines)
-.github/extensions/cron-scheduler/
-  extension.mjs              ← Scheduled tasks (pure JS cron, ~220 lines)
-cron.json                    ← Cron job definitions (timezone + schedule + prompt)
-infra/
-  aws/                       ← AWS Terraform root module
-    main.tf                  ← EC2 + security group + file provisioners
-    variables.tf             ← Input variables (7 API keys + instance config)
-    outputs.tf               ← IP, SSH command, sandbox connect instructions
-    terraform.tfvars.example ← Template (committed)
-  shared/
-    files/
-      sandbox-policy.yaml    ← OpenShell network policy (default deny + allowlist)
-    scripts/
-      bootstrap.sh           ← VM user-data: Docker, Node.js, OpenShell, providers
-      setup-sandbox.sh       ← Host-side: create sandbox, upload secrets, start copilot
-      sandbox-setup.sh       ← Sandbox-side: git config, clone repo, .env, MCP config
-.env                         ← Your bot token (gitignored)
-.env.example                 ← Template
-```
-
-## Key Technical Details
-
-### Credential Management
-
-All credentials are injected via **OpenShell providers** — named credential bundles that are injected as environment variables at runtime. Credentials never touch the sandbox filesystem.
-
-| Provider | Env Var | Used By |
-|----------|---------|---------|
-| copilot | `COPILOT_GITHUB_TOKEN` | Copilot CLI auth |
-| github | `GH_TOKEN` | gh CLI, git clone |
-| exa | `EXA_API_KEY` | Exa MCP server |
-| perplexity | `PERPLEXITY_API_KEY` | Perplexity MCP server |
-| youtube | `YOUTUBE_API_KEY` | YouTube MCP server |
-| zernio | `ZERNIO_API_KEY` | Zernio CLI |
-
-**Exception:** `TELEGRAM_BOT_TOKEN` is delivered via a raw secrets file uploaded into the sandbox because the extension reads it from a `.env` file (provider resolver strings don't work as raw token values).
-
-### Network Policy
-
-The sandbox enforces **default-deny** networking. Only explicitly allowlisted endpoints are reachable:
-
-| Endpoint | Mode | Why |
-|----------|------|-----|
-| GitHub API | L7 (tls:terminate) | Credential injection via proxy |
-| GitHub git | L7 (tls:terminate) | Credential injection for clone/push |
-| Copilot API | TCP passthrough | Avoids HTTP/2 coalescing → 421 errors |
-| Telegram | TCP passthrough | Avoids L7 issues with binary payloads |
-| Exa, Perplexity, YouTube, Zernio | L7 (tls:terminate) | Credential injection |
-| MS Learn | TCP passthrough | Public, no auth needed |
-| npm registry | TCP passthrough | Package installs |
-
-### Lessons Learned
-
-- **Extensions require `--experimental`** — the `EXTENSIONS` feature flag is gated behind experimental mode
-- **OpenShell providers inject resolver strings in SSH sessions** — not raw values. Files that need raw tokens (`.env`) must use uploaded secrets
-- **OpenShell `sandbox upload` creates nested directories** — pipe scripts via SSH stdin instead
-- **Copilot needs directory trust before loading extensions** — pre-configure `trusted_folders` in `~/.copilot/config.json`
-- **`ssh -tt` keeps Copilot alive** — `nohup` kills the TTY which Copilot requires for interactive mode
-- **Copilot base image may be outdated** — install latest via `npm install -g @github/copilot` to user-writable prefix
+- **Each thread = One session**: Start conversation in any channel, replies stay in that session
+- **Cross-thread context**: Cron jobs can hint at related conversations across threads
+- **Simultaneous operation**: Telegram multi-session + Slack threads work together
 
 ## Scheduled Tasks (Cron)
 
-The **cron-scheduler** extension runs scheduled prompts automatically. Define jobs in `cron.json`:
+Define jobs in `cron.json` with channel targeting:
 
 ```json
 {
-  "timezone": "America/Chicago",
+  "timezone": "America/Chicago", 
   "jobs": [
     {
       "id": "daily-standup",
       "schedule": "0 9 * * 1-5",
       "prompt": "Daily standup: check GitHub notifications, open PRs, assigned issues.",
+      "target": "telegram",
+      "enabled": true
+    },
+    {
+      "id": "weekly-review", 
+      "schedule": "0 17 * * 5",
+      "prompt": "Weekly review: summarize completed work, plan next week priorities.",
+      "target": "all",
       "enabled": true
     }
   ]
 }
 ```
 
-**Cron expression format:** `minute hour day-of-month month day-of-week`
+**Targets**: `telegram`, `slack`, `all`  
+**Dedicated sessions**: Each cron job runs in its own session with cross-session context hints  
+**Hot reload**: Jobs reload automatically when `cron.json` changes  
+**Enable**: Set `CRON_ENABLED=true` in `.env`
 
-| Expression | Meaning |
-|-----------|---------|
-| `0 9 * * 1-5` | 9:00 AM weekdays |
-| `0 17 * * 5` | 5:00 PM Fridays |
-| `0 8 * * *` | 8:00 AM daily |
-| `*/30 * * * *` | Every 30 minutes |
-| `0 9,17 * * *` | 9 AM and 5 PM daily |
+## Implementation Details
 
-Supports: `*`, ranges (`1-5`), lists (`1,3,5`), steps (`*/15`). Timezone-aware via `Intl.DateTimeFormat`.
+### From Extension to Service: The SDK Evolution
 
-**Tools available to the agent:**
-- `cron_list_jobs` — list all configured jobs with status
-- `cron_next_run` — show when each enabled job fires next
+**Extension (`joinSession`)**:
+```javascript
+import { joinSession, approveAll } from "@github/copilot-sdk/extension";
 
-Responses flow through the Telegram bridge automatically — scheduled task results appear in your Telegram chat.
-
-## Future: Multi-Session Bridge Service ([#1](https://github.com/htekdev/gh-cli-telegram-extension/issues/1))
-
-The current architecture is one extension → one session → one conversation. We're working on a **standalone bridge service** that enables:
-
-### Multi-Session Conversations
-```
-┌─────────────────────────────────────────┐
-│  Bridge Service (Node.js)               │
-│                                         │
-│  Telegram Poller ──→ Message Router     │
-│                        ↓    ↓    ↓      │
-│                      Sess1 Sess2 Sess3  │
-│                      (CopilotClient SDK)│
-│                                         │
-│  Cron Scheduler ──→ Scheduled Prompts   │
-└─────────────────────────────────────────┘
+const session = await joinSession({
+  onPermissionRequest: approveAll,
+  hooks: {
+    onUserPromptSubmitted: async (input) => {
+      // Single session, simple hooks
+    }
+  }
+});
 ```
 
-- **Multiple parallel sessions** via the `CopilotClient` SDK (`createSession` / `resumeSession`)
-- **Telegram commands**: `/new` (create session), `/switch N` (resume), `/list` (show all)
-- **Auto-routing** via Telegram reply threads or forum topics
+**Service (`CopilotClient`)**:
+```typescript
+import { CopilotClient } from "@github/copilot-sdk";
 
-### Scheduled Tasks
-- `node-cron` for recurring prompts: daily standups, PR summaries, notification digests
-- Configured via Telegram commands or config file
+const client = new CopilotClient({
+  cliUrl: "ws://localhost:4321"
+});
 
-### Azure Support
-- Azure Terraform module alongside the existing AWS module
-- Same shared scripts and policy, different cloud provider
+// Manage N sessions programmatically
+const session1 = await client.createSession();
+const session2 = await client.resumeSession(sessionId);
+```
 
-### Webhook Migration
-- Switch from long polling to Telegram webhooks for cleaner multi-instance architecture
-- Requires public URL (nginx reverse proxy or Cloudflare tunnel)
+**Key differences**:
+- Extension: Copilot manages the session, you provide hooks
+- Service: You manage sessions, Copilot provides the runtime
 
-## Bot Commands
+### Session Architecture
 
-| Command | Description |
-|---------|-------------|
-| `/start` | Welcome message + your chat ID |
-| `/status` | Bridge connection status |
-| `/help` | Available commands |
+- **Session IDs**: Structured as `tg-{chatId}-{timestamp}` or `slack-{teamId}-{channelId}-{threadTs}`
+- **First message auto-creates** session (no manual `/new` needed)
+- **Infinite sessions** with auto-compaction at 80% context limit
+- **Per-chat mutex** prevents concurrent session creation races
+- **Cross-restart persistence** via CopilotClient SDK state management
 
-## Limitations
+### Security Model (Cloud Mode)
 
-- Text messages only (photos, documents, voice not forwarded yet)
-- One bot token = one polling consumer (Telegram API constraint)
-- Single session per deployment (multi-session coming in [#1](https://github.com/htekdev/gh-cli-telegram-extension/issues/1))
+**OpenShell Sandbox**:
+- Default-deny networking policy
+- Only allows: Telegram, GitHub, Copilot APIs, npm registry
+- Credential injection via L7 providers (no secrets in git)
+
+**Network Policy** (`sandbox-policy.yaml`):
+```yaml
+networking:
+  defaultAction: deny
+  rules:
+    - protocol: https
+      host: "*.telegram.org" 
+      action: allow
+    - protocol: https
+      host: "*.github.com"
+      action: allow
+```
+
+## File Structure
+
+```
+src/                          # Service mode implementation
+  index.ts                    # Entry: config → client → poller → cron
+  config.ts                   # .env loading + Zod validation
+  telegram/
+    api.ts                    # Telegram Bot API helpers (typed)
+    poller.ts                 # Long polling with backoff/conflict handling
+    commands.ts               # Multi-session commands (/new, /switch, etc.)
+    router.ts                 # Route messages to active session
+  slack/
+    app.ts                    # Slack Bolt app (thread-based sessions) 
+    events.ts                 # Message/thread event handlers
+  sessions/
+    manager.ts                # CopilotClient lifecycle management
+    types.ts                  # Session metadata types
+  cron/
+    parser.ts                 # Cron expression parser (5-field, pure JS)
+    scheduler.ts              # Scheduled prompt runner + file watching
+
+.github/
+  extensions/                 # Extension mode examples
+    telegram-bridge.mjs       # Single-file extension example
+    slack-bridge.mjs          # Slack extension variant
+
+infra/                       # Cloud mode deployment
+  aws/
+    main.tf                   # EC2 + security groups + OpenShell
+    variables.tf              # Input vars (tokens + git_ref + git_repo)  
+    outputs.tf                # SSH access info
+  shared/
+    files/
+      sandbox-policy.yaml     # OpenShell network policy
+    scripts/
+      bootstrap.sh            # VM setup: Docker + Node.js + OpenShell
+      sandbox-setup.sh        # Sandbox: clone + build + .env + start
+      reset-sandbox.sh        # Destroy/recreate sandbox
+
+cron.json                     # Cron job definitions (hot-reloaded)
+package.json                  # Dependencies + scripts
+tsconfig.json                 # TypeScript config
+vitest.config.ts             # Test configuration
+.env.example                  # Environment template
+```
+
+## Key Technical Details
+
+### Session Management
+- Sessions use structured IDs: `tg-{chatId}-{timestamp}`
+- First message auto-creates a session (no `/new` needed)
+- Infinite sessions enabled for long-running conversations (auto-compaction at 80% context)
+- Per-chat mutex prevents concurrent session creation races
+- Sessions persist across restarts via CopilotClient SDK
+
+### Credential Management
+All credentials are injected via **OpenShell providers** at runtime. `TELEGRAM_BOT_TOKEN` is delivered via raw secrets file (provider resolver strings don't work as raw token values).
+
+### Network Policy
+Default-deny sandbox networking. Only Telegram, GitHub, Copilot, Exa, Perplexity, YouTube, Zernio, MS Learn, and npm registry are reachable.
+
+## Development
+
+```bash
+npm install          # Install dependencies
+npm run build        # Compile TypeScript
+npm start            # Run the bridge service
+npm test             # Run tests
+npm run test:watch   # Watch mode
+npm run test:coverage # Coverage report
+```
+
+## What You Can Build
+
+This repo is just one example. The same extensibility model enables:
+
+**Extension Mode** (`.mjs` files):
+- GitHub webhook processors
+- Code review automation  
+- Custom integrations with tools
+- Personal productivity scripts
+
+**Service Mode** (`CopilotClient`):
+- Multi-user chat bots
+- Workflow orchestration services
+- API gateways with AI reasoning
+- Custom agent platforms
+
+**Cloud Mode** (OpenShell + Terraform):
+- Production chat bots
+- Serverless AI functions
+- Enterprise integrations
+- Secure multi-tenant services
+
+The GitHub Copilot CLI extensibility model scales with your needs — start simple, grow sophisticated.
 
 ## License
 

@@ -7,10 +7,33 @@
  *
  * Requires TELEGRAM_BOT_TOKEN in .env at the project root.
  * Optionally set TELEGRAM_CHAT_ID to restrict to a single chat.
+ *
+ * Set BRIDGE_MODE=standalone in .env to disable this extension
+ * (when using the standalone bridge service instead).
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { joinSession } from "@github/copilot-sdk/extension";
+
+// ---------------------------------------------------------------------------
+// Skip if standalone bridge service is handling Telegram
+// ---------------------------------------------------------------------------
+function checkBridgeMode() {
+  if (process.env.BRIDGE_MODE === "standalone") return true;
+  const envPath = resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return false;
+  const content = readFileSync(envPath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "BRIDGE_MODE=standalone") return true;
+  }
+  return false;
+}
+
+if (checkBridgeMode()) {
+  await joinSession({ tools: [] });
+  // Extension loaded but idle — standalone service handles Telegram
+} else {
 
 // ---------------------------------------------------------------------------
 // Configuration — read from .env
@@ -576,3 +599,5 @@ session.on("assistant.message", async (event) => {
 session.on("session.idle", () => {
   stopTypingIndicator();
 });
+
+} // end BRIDGE_MODE check

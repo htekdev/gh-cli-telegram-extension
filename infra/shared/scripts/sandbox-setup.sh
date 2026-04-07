@@ -1,10 +1,12 @@
 #!/bin/bash
 # sandbox-setup.sh — Runs INSIDE the OpenShell sandbox.
-# Configures git, clones repo, generates MCP config, starts Copilot CLI.
+# Configures git, clones repo, builds service, generates MCP config.
+set -euo pipefail
 #
-# ALL credentials are injected as env vars by OpenShell providers:
-#   GH_TOKEN, COPILOT_GITHUB_TOKEN, TELEGRAM_BOT_TOKEN,
-#   EXA_API_KEY, PERPLEXITY_API_KEY, YOUTUBE_API_KEY, ZERNIO_API_KEY
+# Credentials and deploy metadata are injected as env vars via OpenShell
+# providers and raw-secrets.env (loaded below), including GH_TOKEN,
+# COPILOT_GITHUB_TOKEN, TELEGRAM_BOT_TOKEN, SLACK_BOT_TOKEN, SLACK_APP_TOKEN,
+# EXA_API_KEY, PERPLEXITY_API_KEY, YOUTUBE_API_KEY, ZERNIO_API_KEY, GIT_REF, GIT_REPO
 
 echo "=== Sandbox internal setup started ==="
 
@@ -21,7 +23,7 @@ if [ -n "$SECRETS_PATH" ]; then
   set +a
   echo "  Raw secrets loaded from $SECRETS_PATH"
 else
-  echo "  WARNING: raw secrets not found — TELEGRAM_BOT_TOKEN may be a resolver string"
+  echo "  WARNING: raw secrets not found — tokens such as TELEGRAM_BOT_TOKEN and Slack tokens may be resolver strings; GIT_REF/GIT_REPO will fall back to defaults"
 fi
 
 # ── Configure git ────────────────────────────────────────────────────────────
@@ -45,37 +47,48 @@ echo "  git configured"
 echo ">>> Authenticating gh CLI..."
 echo "$GH_TOKEN" | gh auth login --with-token 2>&1 || echo "  gh auth skipped"
 
-# ── Clone repo ───────────────────────────────────────────────────────────────
-echo ">>> Cloning gh-cli-telegram-extension..."
-if [ -d ~/gh-cli-telegram-extension ]; then
-  echo "  Already exists, pulling latest"
-  cd ~/gh-cli-telegram-extension && git pull
-else
-  git clone https://github.com/htekdev/gh-cli-telegram-extension.git ~/gh-cli-telegram-extension
-fi
-cd ~/gh-cli-telegram-extension
-echo "  Repo ready"
+# ── Read git deployment info ──────────────────────────────────────────────────
+# GIT_REF and GIT_REPO are sourced from raw-secrets.env above
+GIT_REF="${GIT_REF:-main}"
+GIT_REPO="${GIT_REPO:-https://github.com/htekdev/gh-cli-telegram-extension.git}"
+REPO_DIR=~/copilot-telegram-bridge
+echo "  Git ref: $GIT_REF"
+echo "  Git repo: $GIT_REPO"
 
-# ── Create .env for Telegram bridge extension ────────────────────────────────
+# ── Clone repo ───────────────────────────────────────────────────────────────
+echo ">>> Cloning repo ($GIT_REPO @ $GIT_REF)..."
+if [ -d "$REPO_DIR" ]; then
+  echo "  Already exists, fetching latest"
+  cd "$REPO_DIR" && git fetch origin
+else
+  git clone "$GIT_REPO" "$REPO_DIR"
+fi
+cd "$REPO_DIR"
+git checkout "$GIT_REF"
+echo "  Repo ready at $(git rev-parse --short HEAD)"
+
+# ── Build the bridge service ─────────────────────────────────────────────────
+echo ">>> Installing dependencies and building..."
+npm install 2>&1
+npm run build 2>&1
+echo "  Build complete"
+
+# ── Create .env for bridge service (Telegram + Slack, BRIDGE_MODE=standalone) ─
 echo ">>> Creating .env..."
-cat > ~/gh-cli-telegram-extension/.env << DOTENVEOF
+cat > "$REPO_DIR/.env" << DOTENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 TELEGRAM_CHAT_ID=7729308746
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
+SLACK_APP_TOKEN=$SLACK_APP_TOKEN
 CRON_ENABLED=true
+BRIDGE_MODE=standalone
 DOTENVEOF
-chmod 600 ~/gh-cli-telegram-extension/.env
+chmod 600 "$REPO_DIR/.env"
 echo "  .env created"
 
-# ── Update Copilot CLI ────────────────────────────────────────────────────────
-# Base image may have an older version. Install latest to user-writable location.
-echo ">>> Updating Copilot CLI..."
-npm install -g @github/copilot@latest --prefix ~/.npm-global 2>&1 | tail -3 || true
-export PATH="$HOME/.npm-global/bin:$PATH"
-echo "  Copilot: $(copilot --version 2>&1 | head -1)"
-
 # ── Pre-trust the repo directory ──────────────────────────────────────────────
-# Copilot prompts "do you trust this directory?" on first launch.
-# --yolo handles tool permissions but NOT directory trust. Merge into existing config.
+# Copilot tooling prompts "do you trust this directory?" on first use.
+# Pre-populate config so Copilot CLI/agents can run inside the sandbox non-interactively.
 echo ">>> Pre-trusting repo directory..."
 mkdir -p ~/.copilot
 if [ -f ~/.copilot/config.json ]; then
@@ -83,19 +96,19 @@ if [ -f ~/.copilot/config.json ]; then
     const fs = require("fs");
     const cfg = JSON.parse(fs.readFileSync(process.env.HOME + "/.copilot/config.json", "utf8"));
     cfg.trusted_folders = cfg.trusted_folders || [];
-    if (!cfg.trusted_folders.includes("/sandbox/gh-cli-telegram-extension")) {
-      cfg.trusted_folders.push("/sandbox/gh-cli-telegram-extension");
+    if (!cfg.trusted_folders.includes("/sandbox/copilot-telegram-bridge")) {
+      cfg.trusted_folders.push("/sandbox/copilot-telegram-bridge");
     }
     cfg.experimental = true;
     fs.writeFileSync(process.env.HOME + "/.copilot/config.json", JSON.stringify(cfg, null, 2));
   '
 else
-  echo '{"trusted_folders":["/sandbox/gh-cli-telegram-extension"],"experimental":true}' > ~/.copilot/config.json
+  echo '{"trusted_folders":["/sandbox/copilot-telegram-bridge"],"experimental":true}' > ~/.copilot/config.json
 fi
 echo "  Directory pre-trusted"
 
 # ── Generate MCP config ─────────────────────────────────────────────────────
-# All env vars are injected by OpenShell providers at runtime.
+# All secrets are injected as env vars via providers/raw-secrets at runtime.
 echo ">>> Generating MCP config..."
 mkdir -p ~/.copilot
 
@@ -136,5 +149,5 @@ MCPEOF
 echo "  MCP config generated"
 
 echo "=== Sandbox setup complete ==="
-echo "  Repo: ~/gh-cli-telegram-extension"
+echo "  Repo: $REPO_DIR ($(git rev-parse --short HEAD))"
 echo "  MCP:  ~/.copilot/mcp-config.json"

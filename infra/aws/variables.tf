@@ -88,3 +88,31 @@ variable "zernio_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "slack_bot_token" {
+  description = "Slack bot token (xoxb-...) for posting messages"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "slack_app_token" {
+  description = "Slack app-level token (xapp-...) for Socket Mode"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# ── Deployment ────────────────────────────────────────────────────────────────
+
+variable "git_ref" {
+  description = "Git commit SHA to deploy (ensures exact code version)"
+  type        = string
+  default     = "main"
+}
+
+variable "git_repo" {
+  description = "Git repository clone URL"
+  type        = string
+  default     = "https://github.com/htekdev/gh-cli-telegram-extension.git"
+}

@@ -3,7 +3,7 @@
 # Runs as root on first boot (Ubuntu 24.04). Variables injected by Terraform templatefile.
 #
 # Installs: Docker, Node.js 22, pnpm, GitHub CLI, OpenShell
-# Then creates sandbox with Copilot CLI + Telegram bridge
+# Then hands off to setup-sandbox.sh to create an OpenShell sandbox running the standalone Telegram bridge service
 set -euo pipefail
 
 # ── Deploy status sentinel ───────────────────────────────────────────────────
@@ -26,7 +26,11 @@ EXA_API_KEY="${exa_api_key}"
 PERPLEXITY_API_KEY="${perplexity_api_key}"
 YOUTUBE_API_KEY="${youtube_api_key}"
 ZERNIO_API_KEY="${zernio_api_key}"
+SLACK_BOT_TOKEN="${slack_bot_token}"
+SLACK_APP_TOKEN="${slack_app_token}"
 PROJECT_NAME="${project_name}"
+GIT_REF="${git_ref}"
+GIT_REPO="${git_repo}"
 
 LOG="/var/log/bootstrap.log"
 exec > >(tee -a "$LOG") 2>&1
@@ -101,11 +105,16 @@ echo "  Credential files written"
 
 # ── Write raw secrets for sandbox upload ─────────────────────────────────────
 # Provider env vars in SSH sessions resolve to openshell:resolve:... strings,
-# not raw values. TELEGRAM_BOT_TOKEN needs to be written as a raw value into
-# the .env file for the Telegram bridge extension to read.
+# not raw values. TELEGRAM_BOT_TOKEN and Slack tokens must be written as raw
+# values so the bridge .env file can consume them. GIT_REF and GIT_REPO are
+# also included here to avoid additional uploads via OpenShell.
 echo ">>> Writing raw secrets..."
 cat > /home/ubuntu/raw-secrets.env << ENVEOF
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN
+SLACK_APP_TOKEN=$SLACK_APP_TOKEN
+GIT_REF=$GIT_REF
+GIT_REPO=$GIT_REPO
 ENVEOF
 chmod 600 /home/ubuntu/raw-secrets.env
 chown ubuntu:ubuntu /home/ubuntu/raw-secrets.env
@@ -139,6 +148,13 @@ PROFILEEOF'
 echo ">>> Authenticating gh CLI..."
 su - ubuntu -c "echo '$GH_TOKEN' | gh auth login --with-token" || echo "  gh auth skipped"
 
+# ── Write git ref and repo for sandbox setup ─────────────────────────────────
+echo ">>> Writing git deployment info..."
+echo "$GIT_REF" > /home/ubuntu/git-ref
+echo "$GIT_REPO" > /home/ubuntu/git-repo
+chmod 644 /home/ubuntu/git-ref /home/ubuntu/git-repo
+chown ubuntu:ubuntu /home/ubuntu/git-ref /home/ubuntu/git-repo
+
 # ── Fix line endings on uploaded scripts ─────────────────────────────────────
 # File provisioners on Windows upload with CRLF — bash chokes on \r.
 echo ">>> Fixing line endings on uploaded scripts..."
@@ -146,7 +162,7 @@ for f in /home/ubuntu/*.sh /home/ubuntu/*.yaml /home/ubuntu/*.env; do
   [ -f "$f" ] && sed -i 's/\r$//' "$f"
 done
 
-# ── Run sandbox setup ───────────────────────────────────────────────────────
+# ── Run sandbox setup (creates providers + sandbox + starts bridge service) ─
 echo ">>> Running sandbox setup..."
 su - ubuntu -c 'bash /home/ubuntu/setup-sandbox.sh'
 

@@ -97,7 +97,11 @@ resource "aws_instance" "main" {
     perplexity_api_key   = var.perplexity_api_key
     youtube_api_key      = var.youtube_api_key
     zernio_api_key       = var.zernio_api_key
+    slack_bot_token      = var.slack_bot_token
+    slack_app_token      = var.slack_app_token
     project_name         = var.project_name
+    git_ref              = var.git_ref
+    git_repo             = var.git_repo
   })
 
   connection {

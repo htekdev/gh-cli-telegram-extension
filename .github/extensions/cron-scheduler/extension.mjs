@@ -6,10 +6,32 @@
  * extension is active (e.g., the Telegram bridge).
  *
  * Zero dependencies — pure JS cron matching.
+ *
+ * Set BRIDGE_MODE=standalone in .env to disable this extension
+ * (when using the standalone bridge service instead).
  */
 import { readFileSync, existsSync, watchFile } from "node:fs";
 import { resolve } from "node:path";
 import { joinSession } from "@github/copilot-sdk/extension";
+
+// ---------------------------------------------------------------------------
+// Skip if standalone bridge service is handling cron
+// ---------------------------------------------------------------------------
+function checkBridgeMode() {
+  if (process.env.BRIDGE_MODE === "standalone") return true;
+  const envPath = resolve(process.cwd(), ".env");
+  if (!existsSync(envPath)) return false;
+  const content = readFileSync(envPath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "BRIDGE_MODE=standalone") return true;
+  }
+  return false;
+}
+
+if (checkBridgeMode()) {
+  await joinSession({ tools: [] });
+} else {
 
 // ---------------------------------------------------------------------------
 // Read CRON_ENABLED from .env if not in environment
@@ -302,3 +324,5 @@ if (!CRON_ENABLED) {
     "⏰ Cron scheduler: enabled but no jobs configured (create cron.json)"
   );
 }
+
+} // end BRIDGE_MODE check
