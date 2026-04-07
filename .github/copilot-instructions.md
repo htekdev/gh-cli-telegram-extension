@@ -44,6 +44,71 @@ Sessions receive MCP tool configs via `mcpServers` on `createSession()`/`resumeS
 
 Supports both `{ "mcpServers": { ... } }` wrapper and flat format.
 
+### Extension vs Service Mode (BRIDGE_MODE)
+
+This repo operates in two modes. **Do not remove extensions** — they are kept for local dev.
+
+- **Extension mode** (local dev) — Run `copilot --experimental` in this repo. Extensions in `.github/extensions/` auto-load: `telegram-bridge`, `cron-scheduler`, `ci-monitor`. The bridge runs inside a single Copilot session.
+- **Service mode** (cloud/standalone) — `npm start` runs the `CopilotClient` SDK service. Extensions load but stay idle because `BRIDGE_MODE=standalone` is set. The service manages N sessions programmatically.
+
+The `BRIDGE_MODE` env var controls this:
+- `BRIDGE_MODE=standalone` → extensions detect this and skip activation
+- `BRIDGE_MODE` unset → extensions run normally (local dev)
+
+`sandbox-setup.sh` sets `BRIDGE_MODE=standalone` automatically in the deployed `.env`.
+
+### Message Flow (Telegram → Copilot → Telegram)
+
+```
+User sends Telegram message
+  → TelegramPoller receives via getUpdates
+  → MessageRouter calls sessionManager.sendMessage(chatId, text)
+  → SessionManager calls session.send({ prompt, mode: "enqueue" })
+  → CopilotClient processes prompt, agent runs tools
+  → session emits "assistant.message" event
+  → SessionManager forwards via channel.sendMessage(chatId, content)
+  → TelegramApi sends response to user
+```
+
+### session.send() Modes — CRITICAL
+
+The CopilotClient SDK's `session.send()` has different modes. Using the wrong one is a common mistake:
+
+- **`mode: "enqueue"`** — Queues the message. If the agent is busy, it processes after the current turn. Use for **user messages from the bridge** and **cron job prompts**.
+- **`mode: "immediate"`** — Steers the agent mid-turn, interrupting current work. Use for **CI notifications**, **system alerts**, and anything in `.github/extensions/` that needs to inject context while the agent is running.
+
+**Wrong:** Using `enqueue` for CI results (they queue behind the current turn and feel delayed).
+**Wrong:** Using `immediate` for normal user messages (can interrupt agent mid-thought).
+
+### Telegram Poller — Singleton Constraint
+
+Telegram's `getUpdates` API allows **only one consumer per bot token**. Multiple pollers → HTTP 409 "Conflict" error.
+
+- The `TelegramPoller` handles this with a 3-second backoff on conflict detection
+- **Never start a second poller** for the same bot token — in extension mode, check if polling is already active before starting
+- In service mode, only one `TelegramAdapter` instance exists per bot token (enforced by the single-process architecture)
+- For local dev + cloud simultaneously, use **separate bot tokens** (one for local, one for the deployed instance)
+
+## Git & CI Workflow
+
+### Pushing Code
+
+**Always use `gh hookflow git-push`** instead of raw `git push`. Direct pushes are blocked by hookflow governance:
+
+```bash
+# ✅ Correct
+gh hookflow git-push origin my-branch
+
+# ❌ Blocked — will be denied
+git push origin my-branch
+```
+
+### CI/CD
+
+- PRs trigger deploy to `dev` environment
+- Merges to `main` trigger deploy to `prod`
+- CI status is reported by the `ci-monitor` extension (when loaded) via `mode: "immediate"`
+
 ## TypeScript & Module System
 
 - **ESM** — `"type": "module"` in package.json. Always use `.js` extensions in relative imports.
@@ -216,6 +281,7 @@ Cron sessions run in isolated `cron-{jobId}` sessions — they never switch the 
 - **GitHub Actions** (`.github/workflows/deploy.yml`) — PR → dev, merge to main → prod
 - **OpenShell sandbox** — default-deny networking, credential injection via providers
 - **MCP config** generated at `~/.copilot/mcp-config.json` by `sandbox-setup.sh`
+- **BRIDGE_MODE** set to `standalone` by `sandbox-setup.sh` to disable extensions in service mode
 
 ## Environment Variables
 
@@ -230,11 +296,15 @@ Cron sessions run in isolated `cron-{jobId}` sessions — they never switch the 
 | `CLI_PORT` | No | Port for CLI server connection |
 | `CRON_ENABLED` | No | Enable cron scheduler (default: false) |
 | `MCP_CONFIG_PATH` | No | Path to MCP server config JSON |
+| `BRIDGE_MODE` | No | Set to `standalone` in cloud to disable extensions |
 | `LOG_LEVEL` | No | debug, info, warn, error (default: info) |
 
 ## Gotchas
 
-- **Telegram poller conflict**: Only one poller per bot token. Multiple instances → 409 Conflict → 3s backoff.
+- **`git push` is blocked** — Use `gh hookflow git-push origin branch` instead. Direct `git push` is denied by hookflow governance.
+- **`session.send()` mode matters** — `enqueue` for user messages, `immediate` for CI/system notifications. Using the wrong mode causes delayed or disruptive behavior.
+- **Telegram poller conflict**: Only one poller per bot token. Multiple instances → 409 Conflict → 3s backoff. Use separate bot tokens for local dev + cloud.
+- **Don't remove extensions** — Set `BRIDGE_MODE=standalone` to disable them in service mode. They're needed for local dev with `copilot --experimental`.
 - **ESM imports**: Always use `.js` extension in relative imports even though source is `.ts`.
 - **Session event handlers**: Use `attachedSessions` Set to prevent double-attaching handlers on resume.
 - **Infinite sessions**: Enabled by default with 80% background compaction / 95% buffer exhaustion thresholds.
