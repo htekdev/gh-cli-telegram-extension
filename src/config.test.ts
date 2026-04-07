@@ -4,6 +4,15 @@ import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+// Mock homedir so native fallback doesn't pick up the real ~/.copilot/mcp-config.json
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:os")>();
+  return {
+    ...actual,
+    homedir: vi.fn(() => join(actual.tmpdir(), "fake-home-" + process.pid)),
+  };
+});
+
 describe("loadConfig", () => {
   let testDir: string;
 
@@ -144,6 +153,28 @@ describe("loadConfig", () => {
     expect(config.mcpServers).toEqual({
       mslearn: { tools: ["*"], type: "http", url: "https://learn.microsoft.com/api/mcp" },
     });
+  });
+
+  it("falls back to native ~/.copilot/mcp-config.json when no local config exists", async () => {
+    const { homedir } = await import("node:os");
+    const fakeHome = homedir();
+    mkdirSync(join(fakeHome, ".copilot"), { recursive: true });
+    writeFileSync(
+      join(fakeHome, ".copilot", "mcp-config.json"),
+      JSON.stringify({
+        mcpServers: {
+          exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" },
+        },
+      }),
+    );
+    writeFileSync(join(testDir, ".env"), "TELEGRAM_BOT_TOKEN=token\n");
+
+    const config = loadConfig(testDir);
+    expect(config.mcpServers).toEqual({
+      exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" },
+    });
+
+    rmSync(fakeHome, { recursive: true, force: true });
   });
 });
 

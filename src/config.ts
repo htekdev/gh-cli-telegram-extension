@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import { z } from "zod";
 
 const configSchema = z.object({
@@ -130,9 +131,15 @@ export function loadConfig(cwd: string = process.cwd()): Config {
   }
 
   // Load MCP server configs from file
-  const mcpPath = parsed.mcpConfigPath
-    ? resolve(cwd, parsed.mcpConfigPath)
-    : resolve(cwd, "mcp-servers.json");
+  // Priority: MCP_CONFIG_PATH > ./mcp-servers.json > ~/.copilot/mcp-config.json
+  let mcpPath: string;
+  if (parsed.mcpConfigPath) {
+    mcpPath = resolve(cwd, parsed.mcpConfigPath);
+  } else {
+    const localPath = resolve(cwd, "mcp-servers.json");
+    const nativePath = join(homedir(), ".copilot", "mcp-config.json");
+    mcpPath = existsSync(localPath) ? localPath : nativePath;
+  }
   const mcpServers = loadMcpServers(mcpPath);
 
   const serverCount = Object.keys(mcpServers).length;
