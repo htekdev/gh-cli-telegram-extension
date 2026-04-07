@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "exa": {
+      "tools": ["*"],
+      "type": "http",
+      "url": "https://mcp.exa.ai/mcp?exaApiKey=YOUR_EXA_API_KEY"
+    },
+    "mslearn": {
+      "tools": ["*"],
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
+    },
+    "perplexity": {
+      "tools": ["*"],
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "perplexity-mcp"],
+      "env": {
+        "PERPLEXITY_API_KEY": "YOUR_PERPLEXITY_API_KEY"
+      }
+    },
+    "youtube": {
+      "tools": ["*"],
+      "type": "local",
+      "command": "npx",
+      "args": ["-y", "@htekdev/youtube-mcp-server"],
+      "env": {
+        "YOUTUBE_API_KEY": "YOUR_YOUTUBE_API_KEY"
+      }
+    }
+  }
+}

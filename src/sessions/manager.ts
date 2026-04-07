@@ -102,6 +102,10 @@ export class SessionManager {
     let session: CopilotSession;
     const sessionHooks = this.buildSessionHooks();
 
+    const mcpServers = Object.keys(this.config.mcpServers).length > 0
+      ? this.config.mcpServers
+      : undefined;
+
     if (customSessionId && this.sessionMap.has(sessionId)) {
       session = this.sessionMap.get(sessionId)!;
     } else if (customSessionId) {
@@ -109,6 +113,7 @@ export class SessionManager {
         session = await client.resumeSession(sessionId, {
           onPermissionRequest: approveAll,
           hooks: sessionHooks,
+          mcpServers,
         });
       } catch (resumeErr) {
         console.warn(`[session-manager] Could not resume session ${sessionId}, creating new:`, resumeErr);
@@ -116,6 +121,7 @@ export class SessionManager {
           sessionId,
           onPermissionRequest: approveAll,
           hooks: sessionHooks,
+          mcpServers,
           infiniteSessions: {
             enabled: true,
             backgroundCompactionThreshold: 0.8,
@@ -128,6 +134,7 @@ export class SessionManager {
         sessionId,
         onPermissionRequest: approveAll,
         hooks: sessionHooks,
+        mcpServers,
         infiniteSessions: {
           enabled: true,
           backgroundCompactionThreshold: 0.8,
@@ -237,9 +244,13 @@ export class SessionManager {
     // Resume if not already active
     if (!this.sessionMap.has(target.sessionId)) {
       const client = this.ensureClient();
+      const mcpServers = Object.keys(this.config.mcpServers).length > 0
+        ? this.config.mcpServers
+        : undefined;
       const session = await client.resumeSession(target.sessionId, {
         onPermissionRequest: approveAll,
         hooks: this.buildSessionHooks(),
+        mcpServers,
       });
       this.sessionMap.set(target.sessionId, session);
       this.attachSessionHandlers(session, chatId, target.sessionId);

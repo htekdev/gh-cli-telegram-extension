@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { loadConfig } from "./config.js";
+import { loadConfig, loadMcpServers } from "./config.js";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -17,6 +17,7 @@ describe("loadConfig", () => {
     delete process.env.CLI_PORT;
     delete process.env.CRON_ENABLED;
     delete process.env.LOG_LEVEL;
+    delete process.env.MCP_CONFIG_PATH;
   });
 
   afterEach(() => {
@@ -96,5 +97,124 @@ describe("loadConfig", () => {
 
     const config = loadConfig(testDir);
     expect(config.cliPort).toBe(4321);
+  });
+
+  it("loads MCP servers from mcp-servers.json when present", () => {
+    writeFileSync(join(testDir, ".env"), "TELEGRAM_BOT_TOKEN=token\n");
+    writeFileSync(
+      join(testDir, "mcp-servers.json"),
+      JSON.stringify({
+        mcpServers: {
+          exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" },
+        },
+      }),
+    );
+
+    const config = loadConfig(testDir);
+    expect(config.mcpServers).toEqual({
+      exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" },
+    });
+  });
+
+  it("returns empty mcpServers when no MCP config file exists", () => {
+    writeFileSync(join(testDir, ".env"), "TELEGRAM_BOT_TOKEN=token\n");
+
+    const config = loadConfig(testDir);
+    expect(config.mcpServers).toEqual({});
+  });
+
+  it("loads MCP servers from custom path via MCP_CONFIG_PATH", () => {
+    const customDir = join(testDir, "custom");
+    mkdirSync(customDir, { recursive: true });
+    const customPath = join(customDir, "my-mcp.json");
+    writeFileSync(
+      customPath,
+      JSON.stringify({
+        mcpServers: {
+          mslearn: { tools: ["*"], type: "http", url: "https://learn.microsoft.com/api/mcp" },
+        },
+      }),
+    );
+    writeFileSync(
+      join(testDir, ".env"),
+      `TELEGRAM_BOT_TOKEN=token\nMCP_CONFIG_PATH=${customPath}\n`,
+    );
+
+    const config = loadConfig(testDir);
+    expect(config.mcpServers).toEqual({
+      mslearn: { tools: ["*"], type: "http", url: "https://learn.microsoft.com/api/mcp" },
+    });
+  });
+});
+
+describe("loadMcpServers", () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `mcp-test-${Date.now()}`);
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it("returns empty object for missing file", () => {
+    const result = loadMcpServers(join(testDir, "nonexistent.json"));
+    expect(result).toEqual({});
+  });
+
+  it("parses native Copilot format with mcpServers wrapper", () => {
+    const configPath = join(testDir, "mcp.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" },
+          perplexity: {
+            tools: ["*"],
+            type: "local",
+            command: "npx",
+            args: ["-y", "perplexity-mcp"],
+            env: { PERPLEXITY_API_KEY: "test-key" },
+          },
+        },
+      }),
+    );
+
+    const result = loadMcpServers(configPath);
+    expect(Object.keys(result)).toEqual(["exa", "perplexity"]);
+    expect(result.exa).toEqual({ tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" });
+    expect(result.perplexity).toMatchObject({
+      command: "npx",
+      args: ["-y", "perplexity-mcp"],
+    });
+  });
+
+  it("parses flat format without mcpServers wrapper", () => {
+    const configPath = join(testDir, "mcp.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" },
+      }),
+    );
+
+    const result = loadMcpServers(configPath);
+    expect(result.exa).toEqual({ tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" });
+  });
+
+  it("throws on invalid JSON", () => {
+    const configPath = join(testDir, "bad.json");
+    writeFileSync(configPath, "not valid json {{{");
+
+    expect(() => loadMcpServers(configPath)).toThrow("Failed to parse MCP config");
+  });
+
+  it("throws on non-object JSON", () => {
+    const configPath = join(testDir, "array.json");
+    writeFileSync(configPath, "[]");
+
+    expect(() => loadMcpServers(configPath)).toThrow("must be a JSON object");
   });
 });

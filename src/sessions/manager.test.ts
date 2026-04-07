@@ -67,6 +67,7 @@ const baseConfig: Config = {
   cliPort: undefined,
   cronEnabled: false,
   logLevel: "info",
+  mcpServers: {},
 };
 
 const createChannel = (): MessagingChannel => ({
@@ -173,6 +174,109 @@ describe("SessionManager", () => {
     await manager.endSession("chat-4");
     expect(internals.sessionMap.has("session-a")).toBe(false);
     expect(internals.attachedSessions.has("session-a")).toBe(false);
+
+    await manager.stop();
+  });
+
+  it("passes mcpServers to createSession when configured", async () => {
+    const mcpConfig: Config = {
+      ...baseConfig,
+      mcpServers: {
+        exa: { tools: ["*"], type: "http" as const, url: "https://mcp.exa.ai/mcp" },
+      },
+    };
+    const channel = createChannel();
+    const manager = new SessionManager(mcpConfig, channel);
+    await manager.start();
+
+    await manager.createSession("chat-mcp");
+
+    const client = (manager as unknown as { client: { createSession: ReturnType<typeof vi.fn> } }).client;
+    expect(client.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpServers: { exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" } },
+      }),
+    );
+
+    await manager.stop();
+  });
+
+  it("passes mcpServers to resumeSession on named session", async () => {
+    const mcpConfig: Config = {
+      ...baseConfig,
+      mcpServers: {
+        mslearn: { tools: ["*"], type: "http" as const, url: "https://learn.microsoft.com/api/mcp" },
+      },
+    };
+    const channel = createChannel();
+    const manager = new SessionManager(mcpConfig, channel);
+    await manager.start();
+
+    // Named session triggers resume path (which fails, then falls back to create)
+    const client = (manager as unknown as { client: { resumeFailures: Set<string> } }).client;
+    client.resumeFailures.add("named-mcp");
+    await manager.createSession("chat-mcp2", "named-mcp");
+
+    const clientFull = (manager as unknown as { client: { resumeSession: ReturnType<typeof vi.fn>; createSession: ReturnType<typeof vi.fn> } }).client;
+    // Resume was attempted with mcpServers
+    expect(clientFull.resumeSession).toHaveBeenCalledWith(
+      "named-mcp",
+      expect.objectContaining({
+        mcpServers: { mslearn: { tools: ["*"], type: "http", url: "https://learn.microsoft.com/api/mcp" } },
+      }),
+    );
+    // Fallback create also includes mcpServers
+    expect(clientFull.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mcpServers: { mslearn: { tools: ["*"], type: "http", url: "https://learn.microsoft.com/api/mcp" } },
+      }),
+    );
+
+    await manager.stop();
+  });
+
+  it("passes mcpServers to resumeSession on switchSession", async () => {
+    const mcpConfig: Config = {
+      ...baseConfig,
+      mcpServers: {
+        exa: { tools: ["*"], type: "http" as const, url: "https://mcp.exa.ai/mcp" },
+      },
+    };
+    const channel = createChannel();
+    const manager = new SessionManager(mcpConfig, channel);
+    await manager.start();
+
+    await manager.createSession("chat-switch", "switch-session");
+    const internals = manager as unknown as {
+      sessionMap: Map<string, unknown>;
+      attachedSessions: Set<string>;
+    };
+    internals.sessionMap.delete("switch-session");
+    internals.attachedSessions.delete("switch-session");
+
+    await manager.switchSession("chat-switch", 1);
+
+    const clientFull = (manager as unknown as { client: { resumeSession: ReturnType<typeof vi.fn> } }).client;
+    expect(clientFull.resumeSession).toHaveBeenCalledWith(
+      "switch-session",
+      expect.objectContaining({
+        mcpServers: { exa: { tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" } },
+      }),
+    );
+
+    await manager.stop();
+  });
+
+  it("omits mcpServers when config is empty", async () => {
+    const channel = createChannel();
+    const manager = new SessionManager(baseConfig, channel);
+    await manager.start();
+
+    await manager.createSession("chat-nomcp");
+
+    const client = (manager as unknown as { client: { createSession: ReturnType<typeof vi.fn> } }).client;
+    const callArgs = client.createSession.mock.calls[0][0];
+    expect(callArgs.mcpServers).toBeUndefined();
 
     await manager.stop();
   });
