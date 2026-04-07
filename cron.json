@@ -39,7 +39,7 @@
     {
       "id": "htek-dev-site-pr-review",
       "schedule": "0 9 * * *",
-      "prompt": "PR review for htekdev/htek-dev-site: 1) List all open PRs in the htekdev/htek-dev-site repo. If there are none, report that and stop. 2) For each open PR, fetch the diff and files changed. 3) Review each PR twice — first using the claude-opus-4.6 model (task agent), then using the gpt-5.3-codex model (task agent) — and collect both reviews. 4) Summarize both reviews per PR: note any bugs, risks, or blocking issues flagged by either model. 5) If both reviews are positive (no blocking issues), merge the PR using a merge commit. 6) Send a final Telegram summary: list each PR, both review verdicts, and whether it was merged or left open (with reason).",
+      "prompt": "PR review for htekdev/htek-dev-site: 1) List all open PRs in the htekdev/htek-dev-site repo. If there are none, report that and stop. 2) For each open PR, fetch the diff and files changed. 3) Review each PR twice — first using the claude-opus-4.6 model (task agent), then using the gpt-5.3-codex model (task agent) — and collect both reviews. 4) Summarize both reviews per PR: note any bugs, risks, or blocking issues flagged by either model. 5) If both reviews are positive (no blocking issues), merge the PR using a merge commit. 6) If a PR has blocking issues, post a comment on the PR listing all issues clearly, and end the comment with '@copilot please fix the issues listed above in this article.' so the Copilot coding agent can action the fixes automatically. 7) Send a final Telegram summary: list each PR, both review verdicts, and whether it was merged or left open (with reason).",
       "enabled": true,
       "channel": "telegram"
     }
