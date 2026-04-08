@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { homedir } from "node:os";
 import { z } from "zod";
 
 const configSchema = z.object({
@@ -12,10 +13,34 @@ const configSchema = z.object({
   cliPort: z.coerce.number().int().positive().optional(),
   cronEnabled: z.boolean().default(false),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  mcpConfigPath: z.string().optional(),
 });
 
+/** MCP server configuration types matching the CopilotClient SDK. */
+export interface MCPLocalServerConfig {
+  type?: "local" | "stdio";
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  tools: string[];
+  timeout?: number;
+}
+
+export interface MCPRemoteServerConfig {
+  type: "http" | "sse";
+  url: string;
+  headers?: Record<string, string>;
+  tools: string[];
+  timeout?: number;
+}
+
+export type MCPServerConfig = MCPLocalServerConfig | MCPRemoteServerConfig;
+
 /** Runtime configuration derived from environment variables. */
-export type Config = z.infer<typeof configSchema>;
+export type Config = Omit<z.infer<typeof configSchema>, "mcpConfigPath"> & {
+  mcpServers: Record<string, MCPServerConfig>;
+};
 
 function parseEnvFile(filePath: string): Record<string, string> {
   const vars: Record<string, string> = {};
@@ -45,6 +70,39 @@ function getEnv(key: string, envFile: Record<string, string>): string | undefine
   return process.env[key] || envFile[key] || undefined;
 }
 
+/**
+ * Load MCP server configurations from a JSON file.
+ * Supports both the native Copilot format `{ "mcpServers": { ... } }` and
+ * a flat `Record<string, MCPServerConfig>` object.
+ * Returns an empty object if the file does not exist.
+ */
+export function loadMcpServers(configPath: string): Record<string, MCPServerConfig> {
+  if (!existsSync(configPath)) {
+    return {};
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(configPath, "utf-8"));
+  } catch (err) {
+    throw new Error(
+      `Failed to parse MCP config at ${configPath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error(`MCP config at ${configPath} must be a JSON object`);
+  }
+
+  // Support native Copilot format: { "mcpServers": { ... } }
+  const obj = raw as Record<string, unknown>;
+  const servers = (typeof obj.mcpServers === "object" && obj.mcpServers !== null && !Array.isArray(obj.mcpServers))
+    ? obj.mcpServers as Record<string, MCPServerConfig>
+    : obj as Record<string, MCPServerConfig>;
+
+  return servers;
+}
+
 /** Load configuration from environment variables and optional .env file. */
 export function loadConfig(cwd: string = process.cwd()): Config {
   const envFilePath = resolve(cwd, ".env");
@@ -62,14 +120,35 @@ export function loadConfig(cwd: string = process.cwd()): Config {
       getEnv("CRON_ENABLED", envFile) === "true" ||
       getEnv("CRON_ENABLED", envFile) === "1",
     logLevel: getEnv("LOG_LEVEL", envFile) ?? "info",
+    mcpConfigPath: getEnv("MCP_CONFIG_PATH", envFile),
   };
 
-  const config = configSchema.parse(raw);
+  const parsed = configSchema.parse(raw);
 
   // At least one channel must be configured
-  if (!config.telegramBotToken && !config.slackBotToken) {
+  if (!parsed.telegramBotToken && !parsed.slackBotToken) {
     throw new Error("At least one channel must be configured: set TELEGRAM_BOT_TOKEN and/or SLACK_BOT_TOKEN + SLACK_APP_TOKEN");
   }
 
-  return config;
+  // Load MCP server configs from file
+  // Priority: MCP_CONFIG_PATH > ./mcp-servers.json > ~/.copilot/mcp-config.json
+  let mcpPath: string;
+  if (parsed.mcpConfigPath) {
+    mcpPath = resolve(cwd, parsed.mcpConfigPath);
+  } else {
+    const localPath = resolve(cwd, "mcp-servers.json");
+    const nativePath = join(homedir(), ".copilot", "mcp-config.json");
+    mcpPath = existsSync(localPath) ? localPath : nativePath;
+  }
+  const mcpServers = loadMcpServers(mcpPath);
+
+  const serverCount = Object.keys(mcpServers).length;
+  if (serverCount > 0) {
+    console.log(`[config] Loaded ${serverCount} MCP server(s) from ${mcpPath}`);
+  } else if (parsed.mcpConfigPath) {
+    console.warn(`[config] MCP config path set but no servers loaded from ${mcpPath}`);
+  }
+
+  const { mcpConfigPath: _, ...rest } = parsed;
+  return { ...rest, mcpServers };
 }
