@@ -12,6 +12,7 @@ const configSchema = z.object({
   cliUrl: z.string().optional(),
   cliPort: z.coerce.number().int().positive().optional(),
   cronEnabled: z.boolean().default(false),
+  sessionIdleTimeoutMinutes: z.coerce.number().int().nonnegative().default(0),
   logLevel: z.enum(["debug", "info", "warn", "error"]).default("info"),
   mcpConfigPath: z.string().optional(),
 });
@@ -119,6 +120,7 @@ export function loadConfig(cwd: string = process.cwd()): Config {
     cronEnabled:
       getEnv("CRON_ENABLED", envFile) === "true" ||
       getEnv("CRON_ENABLED", envFile) === "1",
+    sessionIdleTimeoutMinutes: getEnv("SESSION_IDLE_TIMEOUT_MINUTES", envFile) ?? "0",
     logLevel: getEnv("LOG_LEVEL", envFile) ?? "info",
     mcpConfigPath: getEnv("MCP_CONFIG_PATH", envFile),
   };

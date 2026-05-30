@@ -25,6 +25,7 @@ describe("loadConfig", () => {
     delete process.env.CLI_URL;
     delete process.env.CLI_PORT;
     delete process.env.CRON_ENABLED;
+    delete process.env.SESSION_IDLE_TIMEOUT_MINUTES;
     delete process.env.LOG_LEVEL;
     delete process.env.MCP_CONFIG_PATH;
   });
@@ -76,6 +77,16 @@ describe("loadConfig", () => {
 
     const config = loadConfig(testDir);
     expect(config.cronEnabled).toBe(false);
+  });
+
+  it("parses SESSION_IDLE_TIMEOUT_MINUTES", () => {
+    writeFileSync(
+      join(testDir, ".env"),
+      "TELEGRAM_BOT_TOKEN=token\nSESSION_IDLE_TIMEOUT_MINUTES=15\n",
+    );
+
+    const config = loadConfig(testDir);
+    expect(config.sessionIdleTimeoutMinutes).toBe(15);
   });
 
   it("handles quoted values in .env", () => {
