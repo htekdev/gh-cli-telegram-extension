@@ -113,6 +113,7 @@ terraform init && terraform apply
 | `CLI_URL` | — | ⭕ | ⭕ | Connect to existing headless CLI (`localhost:4321`) |
 | `CLI_PORT` | — | ⭕ | ⭕ | Port for CopilotClient server |
 | `CRON_ENABLED` | — | ⭕ | ⭕ | Enable cron scheduler (`true`/`false`, default: `false`) |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | — | ⭕ | ⭕ | Auto-clean idle non-cron sessions after N minutes (`0` disables) |
 | `LOG_LEVEL` | ⭕ | ⭕ | ⭕ | Log level (`debug`/`info`/`warn`/`error`) |
 
 ✅ = Required, ⭕ = Optional, — = Not applicable
@@ -309,6 +310,7 @@ vitest.config.ts             # Test configuration
 - Infinite sessions enabled for long-running conversations (auto-compaction at 80% context)
 - Per-chat mutex prevents concurrent session creation races
 - Sessions persist across restarts via CopilotClient SDK
+- Optional idle cleanup for non-cron sessions via `SESSION_IDLE_TIMEOUT_MINUTES`
 
 ### Credential Management
 All credentials are injected via **OpenShell providers** at runtime. `TELEGRAM_BOT_TOKEN` is delivered via raw secrets file (provider resolver strings don't work as raw token values).

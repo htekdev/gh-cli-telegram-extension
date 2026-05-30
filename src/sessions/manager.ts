@@ -25,6 +25,7 @@ export class SessionManager {
   private typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
   private sendLocks = new Map<string, Promise<void>>();
   private readonly attachedSessions = new Set<string>();
+  private idleCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: Config, channel: MessagingChannel) {
     this.config = config;
@@ -45,10 +46,25 @@ export class SessionManager {
     this.client = new CopilotClient(opts);
     await this.client.start();
     console.log("[session-manager] CopilotClient started");
+
+    if (this.config.sessionIdleTimeoutMinutes > 0) {
+      const timeoutMs = this.config.sessionIdleTimeoutMinutes * 60_000;
+      const cleanupIntervalMs = Math.max(5_000, Math.min(60_000, Math.floor(timeoutMs / 2)));
+      this.idleCleanupTimer = setInterval(() => {
+        this.cleanupIdleSessions().catch((err) => {
+          console.warn("[session-manager] Idle cleanup failed:", err);
+        });
+      }, cleanupIntervalMs);
+    }
   }
 
   /** Stop the Copilot client and clear tracked sessions. */
   async stop(): Promise<void> {
+    if (this.idleCleanupTimer) {
+      clearInterval(this.idleCleanupTimer);
+      this.idleCleanupTimer = null;
+    }
+
     for (const [, interval] of this.typingIntervals) {
       clearInterval(interval);
     }
@@ -150,6 +166,7 @@ export class SessionManager {
       sessionId,
       chatId,
       createdAt: new Date(),
+      lastActivityAt: new Date(),
     };
 
     const chatState = this.getChatState(chatId);
@@ -184,6 +201,10 @@ export class SessionManager {
 
       const session = this.sessionMap.get(chatState.activeSessionId!);
       if (!session) throw new Error("No active session");
+      const activeSession = chatState.sessions.get(chatState.activeSessionId!);
+      if (activeSession) {
+        activeSession.lastActivityAt = new Date();
+      }
 
       this.startTyping(chatId);
 
@@ -222,6 +243,11 @@ export class SessionManager {
 
     const session = this.sessionMap.get(cronSessionId);
     if (!session) throw new Error(`No cron session for ${jobId}`);
+    const chatState = this.getChatState(chatId);
+    const cronInfo = chatState.sessions.get(cronSessionId);
+    if (cronInfo) {
+      cronInfo.lastActivityAt = new Date();
+    }
 
     this.startTyping(chatId);
     try {
@@ -257,6 +283,7 @@ export class SessionManager {
     }
 
     chatState.activeSessionId = target.sessionId;
+    target.lastActivityAt = new Date();
     console.log(`[session-manager] Switched to session ${target.sessionId} in chat ${chatId}`);
     return target;
   }
@@ -353,6 +380,11 @@ export class SessionManager {
     session.on("assistant.message", (event) => {
       const content = event.data.content;
       if (!content || content.trim().length === 0) return;
+      const chatState = this.chats.get(chatId);
+      const info = chatState?.sessions.get(sessionId);
+      if (info) {
+        info.lastActivityAt = new Date();
+      }
       this.stopTyping(chatId);
       this.channel.sendMessage(chatId, content).catch((err) => {
         console.warn(
@@ -370,5 +402,54 @@ export class SessionManager {
   /** Return true if the Copilot client is running. */
   isRunning(): boolean {
     return this.client !== null;
+  }
+
+  private async cleanupIdleSessions(): Promise<void> {
+    if (this.config.sessionIdleTimeoutMinutes <= 0) return;
+    const timeoutMs = this.config.sessionIdleTimeoutMinutes * 60_000;
+    const now = Date.now();
+
+    for (const [chatId, chatState] of this.chats) {
+      for (const info of Array.from(chatState.sessions.values())) {
+        if (info.sessionId.startsWith("cron-")) continue;
+
+        const idleMs = now - info.lastActivityAt.getTime();
+        if (idleMs < timeoutMs) continue;
+
+        if (chatState.activeSessionId === info.sessionId) {
+          await this.endSession(chatId);
+        } else {
+          await this.deleteSessionById(chatId, info.sessionId);
+        }
+      }
+    }
+  }
+
+  private async deleteSessionById(chatId: string, sessionId: string): Promise<void> {
+    const chatState = this.getChatState(chatId);
+    const session = this.sessionMap.get(sessionId);
+
+    try {
+      if (session) {
+        await session.disconnect();
+      }
+    } catch (disconnectErr) {
+      console.warn(`[session-manager] Error disconnecting session ${sessionId}:`, disconnectErr);
+    } finally {
+      this.sessionMap.delete(sessionId);
+      this.attachedSessions.delete(sessionId);
+      chatState.sessions.delete(sessionId);
+      if (chatState.activeSessionId === sessionId) {
+        const remaining = Array.from(chatState.sessions.values());
+        chatState.activeSessionId = remaining.length > 0 ? remaining[remaining.length - 1].sessionId : null;
+      }
+    }
+
+    const client = this.ensureClient();
+    try {
+      await client.deleteSession(sessionId);
+    } catch (deleteErr) {
+      console.warn(`[session-manager] Could not delete session ${sessionId} (may already be removed):`, deleteErr);
+    }
   }
 }

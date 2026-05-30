@@ -3,6 +3,7 @@ export interface SessionInfo {
   sessionId: string;
   chatId: string;
   createdAt: Date;
+  lastActivityAt: Date;
   summary?: string;
 }
 

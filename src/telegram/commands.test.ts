@@ -33,6 +33,7 @@ describe("CommandHandler", () => {
       sessionId: "session-2",
       chatId: "42",
       createdAt: new Date(),
+      lastActivityAt: new Date(),
     });
     sessionManager.getSessionCount.mockReturnValue(3);
     telegram.sendMessage.mockResolvedValue(undefined);

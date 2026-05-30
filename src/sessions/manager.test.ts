@@ -66,6 +66,7 @@ const baseConfig: Config = {
   cliUrl: undefined,
   cliPort: undefined,
   cronEnabled: false,
+  sessionIdleTimeoutMinutes: 0,
   logLevel: "info",
   mcpServers: {},
 };
@@ -174,6 +175,30 @@ describe("SessionManager", () => {
     await manager.endSession("chat-4");
     expect(internals.sessionMap.has("session-a")).toBe(false);
     expect(internals.attachedSessions.has("session-a")).toBe(false);
+
+    await manager.stop();
+  });
+
+  it("cleans up idle non-cron sessions when timeout is configured", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const channel = createChannel();
+    const manager = new SessionManager(
+      { ...baseConfig, sessionIdleTimeoutMinutes: 1 },
+      channel,
+    );
+    await manager.start();
+
+    await manager.createSession("chat-cleanup", "stale-session");
+    await manager.sendToCronSession("chat-cleanup", "daily-report", "run");
+    expect(manager.getSessionCount("chat-cleanup")).toBe(2);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(manager.listSessions("chat-cleanup").map((s) => s.sessionId)).toEqual(["cron-daily-report"]);
+    const client = (manager as unknown as { client: { deleteSession: ReturnType<typeof vi.fn> } }).client;
+    expect(client.deleteSession).toHaveBeenCalledWith("stale-session");
+    expect(client.deleteSession).not.toHaveBeenCalledWith("cron-daily-report");
 
     await manager.stop();
   });
