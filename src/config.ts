@@ -94,13 +94,37 @@ export function loadMcpServers(configPath: string): Record<string, MCPServerConf
     throw new Error(`MCP config at ${configPath} must be a JSON object`);
   }
 
-  // Support native Copilot format: { "mcpServers": { ... } }
+  // Support common wrappers:
+  // - Copilot SDK format: { "mcpServers": { ... } }
+  // - MCP spec format:    { "servers": { ... } }
   const obj = raw as Record<string, unknown>;
-  const servers = (typeof obj.mcpServers === "object" && obj.mcpServers !== null && !Array.isArray(obj.mcpServers))
-    ? obj.mcpServers as Record<string, MCPServerConfig>
-    : obj as Record<string, MCPServerConfig>;
+  const wrappedServers =
+    (typeof obj.mcpServers === "object" && obj.mcpServers !== null && !Array.isArray(obj.mcpServers))
+      ? obj.mcpServers
+      : (typeof obj.servers === "object" && obj.servers !== null && !Array.isArray(obj.servers))
+        ? obj.servers
+        : obj;
 
-  return servers;
+  const normalizedServers: Record<string, MCPServerConfig> = {};
+  for (const [name, server] of Object.entries(wrappedServers as Record<string, unknown>)) {
+    if (typeof server !== "object" || server === null || Array.isArray(server)) continue;
+
+    const cfg = { ...server } as Record<string, unknown>;
+    const allowedTools = cfg.allowedTools;
+    delete cfg.allowedTools;
+    const tools = Array.isArray(cfg.tools)
+      ? cfg.tools
+      : Array.isArray(allowedTools)
+        ? allowedTools
+        : ["*"];
+
+    normalizedServers[name] = {
+      ...cfg,
+      tools: tools.filter((tool): tool is string => typeof tool === "string"),
+    } as MCPServerConfig;
+  }
+
+  return normalizedServers;
 }
 
 /** Load configuration from environment variables and optional .env file. */

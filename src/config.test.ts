@@ -235,6 +235,41 @@ describe("loadMcpServers", () => {
     expect(result.exa).toEqual({ tools: ["*"], type: "http", url: "https://mcp.exa.ai/mcp" });
   });
 
+  it("parses native MCP format with servers wrapper", () => {
+    const configPath = join(testDir, "mcp.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        inputs: [
+          { id: "exa-api-key", type: "promptString", description: "Exa API key", password: true },
+        ],
+        servers: {
+          exa: { type: "http", url: "https://mcp.exa.ai/mcp", tools: ["*"] },
+        },
+      }),
+    );
+
+    const result = loadMcpServers(configPath);
+    expect(result).toEqual({
+      exa: { type: "http", url: "https://mcp.exa.ai/mcp", tools: ["*"] },
+    });
+  });
+
+  it("maps allowedTools to tools for compatibility", () => {
+    const configPath = join(testDir, "mcp.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        servers: {
+          exa: { type: "http", url: "https://mcp.exa.ai/mcp", allowedTools: ["search"] },
+        },
+      }),
+    );
+
+    const result = loadMcpServers(configPath);
+    expect(result.exa).toEqual({ type: "http", url: "https://mcp.exa.ai/mcp", tools: ["search"] });
+  });
+
   it("throws on invalid JSON", () => {
     const configPath = join(testDir, "bad.json");
     writeFileSync(configPath, "not valid json {{{");
